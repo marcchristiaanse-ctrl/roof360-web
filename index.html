@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Roof360">
+<link rel="apple-touch-icon" href="icoon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Roof360 Measure Web</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Layout: één kolom zoals een app op de iPhone; bovenbalk, grote kaart van het dak, daaronder de lijst met daken of dakranden. */
+:root{
+  --bg:#edf1f3; --panel:#ffffff; --fg:#16222b; --muted:#5a6a74; --line:#d3dbe0;
+  --accent:#1d4e6e; --accent-fg:#ffffff; --accent-soft:#dce8f0;
+  --bag:#f08a24; --ok:#17784a; --warn:#a85d00; --bad:#b3261e; --warn-soft:#fff1dc;
+  --map-bg:#c9d2d7;
+  --font:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1519; --panel:#172229; --fg:#e6edf1; --muted:#97a8b2; --line:#2a3a44;
+  --accent:#6fb2dc; --accent-fg:#08202e; --accent-soft:#1c3443;
+  --bag:#ff9f43; --ok:#4cc58a; --warn:#e8a23d; --bad:#f07068; --warn-soft:#3a2a12; --map-bg:#26323a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1519; --panel:#172229; --fg:#e6edf1; --muted:#97a8b2; --line:#2a3a44;
+  --accent:#6fb2dc; --accent-fg:#08202e; --accent-soft:#1c3443;
+  --bag:#ff9f43; --ok:#4cc58a; --warn:#e8a23d; --bad:#f07068; --warn-soft:#3a2a12; --map-bg:#26323a; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:16px/1.45 var(--font);margin:0;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+main{max-width:620px;margin:0 auto;display:grid;gap:14px}
+header.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;align-items:center;gap:10px;padding-block:12px 8px}
+header.bar h1{font-size:1.15rem;margin:0;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand{font-weight:700;letter-spacing:.01em}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:.78rem;letter-spacing:.04em;text-transform:uppercase}
+h2{font-size:.78rem;margin:0;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:600}
+p{margin:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px;min-width:0}
+.muted{color:var(--muted)}
+.small{font-size:.85rem}
+button{font:inherit;font-weight:600;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);padding:10px 14px;min-height:44px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button.icon{min-width:44px;padding:8px}
+button.link{border:0;background:none;color:var(--accent);padding:6px 0;min-height:0;text-align:left}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+input[type=search],input[type=text]{font:inherit;width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);min-height:48px}
+.list{display:grid;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel)}
+.item{display:flex;align-items:center;gap:12px;padding:12px 14px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;text-align:left;width:100%;min-height:56px;font-weight:400}
+.item:last-child{border-bottom:0}
+.item .grow{flex:1;min-width:0}
+.item b{display:block;font-weight:600}
+.item .sub{color:var(--muted);font-size:.85rem}
+.chev{color:var(--muted);font-size:1.3rem}
+.tag{display:inline-block;font-size:.72rem;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.tag.live{background:var(--warn-soft);color:var(--warn)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.note{background:var(--warn-soft);color:var(--fg);border-radius:10px;padding:10px 12px;font-size:.9rem}
+.mapwrap{position:relative;border-radius:12px;overflow:hidden;background:var(--map-bg);border:1px solid var(--line);aspect-ratio:1/1;max-width:100%;touch-action:none}
+.mapwrap svg{display:block;width:100%;height:100%;user-select:none;-webkit-user-select:none}
+.mapctl{position:absolute;right:8px;top:8px;display:grid;gap:6px}
+.mapctl button{min-height:40px;min-width:40px;padding:0;font-size:1.2rem;box-shadow:0 1px 3px rgb(0 0 0 / .2)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-weight:500;min-height:36px;font-size:.9rem}
+.chip[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.swatch{width:14px;height:14px;border-radius:4px;flex:none;border:2px solid}
+.total{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-weight:700;font-size:1.1rem;padding-top:4px}
+.toggle{display:flex;align-items:center;gap:6px;font-size:.85rem;color:var(--muted);white-space:nowrap}
+.toggle input{width:22px;height:22px;accent-color:var(--accent)}
+.edge{display:grid;grid-template-columns:auto 1fr 7.5rem;gap:10px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line)}
+.edge:last-child{border-bottom:0}
+.edge.sel{background:var(--accent-soft)}
+.edge .lbl{font-family:var(--mono);font-weight:500;background:var(--accent);color:var(--accent-fg);border-radius:6px;padding:2px 7px;font-size:.85rem}
+.edge input{min-height:42px;padding:8px 10px;text-align:right;font-family:var(--mono)}
+.edge .msg{grid-column:2 / 4;font-size:.82rem}
+.edge .msg.warn{color:var(--warn)}
+.edge .msg.ok{color:var(--ok)}
+.res{display:grid;grid-template-columns:1fr auto;gap:6px 12px}
+.res .big{font-size:1.25rem;font-weight:700}
+.row2{display:flex;gap:10px;flex-wrap:wrap}
+footer{color:var(--muted);font-size:.8rem;text-align:center;padding-top:6px}
+@media (prefers-reduced-motion:no-preference){.mapwrap svg g.view{transition:none}}
+</style>
+</head>
+<body>
+
+
+<main id="app">
+  <header class="bar" id="bar"></header>
+  <div id="view" style="display:grid;gap:14px"></div>
+  <footer>Voorbeeld van Roof360 Measure als webapp · testversie, nog niet gekoppeld aan je eigen gegevens</footer>
+</main>
+
+<script src="testgebouwen.js"></script>
+<script>
+(() => {
+"use strict";
+const TEST = window.TEST_BUILDINGS || [];
+const COLORS = ["#2e8bd6","#18a06a","#9b5de5","#e0a100","#d6457a","#14a3a3","#7a8d2a","#c26b2a","#5d6fd6","#b04fb0","#3c9c3c"];
+const LUIFEL = "#e5484d";
+const S = { view:"zoeken", query:"", live:[], liveState:"", building:null, part:null, selEdge:null, layers:{foto:true,bag:true,herkend:true,buren:true} };
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const nl = (v, d=2) => v == null || !isFinite(v) ? "–" : v.toLocaleString("nl-NL",{minimumFractionDigits:d,maximumFractionDigits:d});
+const parseNum = s => { if (s == null) return null; const t = String(s).trim().replace(/\s/g,"").replace(",","."); if (!t) return null; const v = Number(t); return isFinite(v) && v > 0 ? v : NaN; };
+
+/* ---------- opslag per gebouw (alleen in deze browser) ---------- */
+const store = {
+  get(id){ try { return JSON.parse(localStorage.getItem("r360web:"+id)) || {}; } catch { return {}; } },
+  set(id, v){ try { localStorage.setItem("r360web:"+id, JSON.stringify(v)); } catch {} }
+};
+
+/* ---------- meetkunde ---------- */
+const shoelace = r => { let a = 0; for (let i=0;i<r.length;i++){ const p=r[i], q=r[(i+1)%r.length]; a += p[0]*q[1]-q[0]*p[1]; } return a/2; };
+const openRing = r => (r.length > 1 && r[0][0]===r[r.length-1][0] && r[0][1]===r[r.length-1][1]) ? r.slice(0,-1) : r;
+const partArea = p => { const rs = p.rings.map(openRing); return Math.abs(shoelace(rs[0])) - rs.slice(1).reduce((s,r)=>s+Math.abs(shoelace(r)),0); };
+const edgesOf = ring => { const r = openRing(ring); return r.map((p,i)=>{ const q=r[(i+1)%r.length]; return {a:p,b:q,len:Math.hypot(q[0]-p[0],q[1]-p[1])}; }); };
+const bounds = rings => { let x0=1e18,y0=1e18,x1=-1e18,y1=-1e18; for (const r of rings) for (const p of r){ x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]); } return [x0,y0,x1,y1]; };
+const centroid = ring => { const r=openRing(ring); let a=0,cx=0,cy=0; for(let i=0;i<r.length;i++){const p=r[i],q=r[(i+1)%r.length],f=p[0]*q[1]-q[0]*p[1];a+=f;cx+=(p[0]+q[0])*f;cy+=(p[1]+q[1])*f;} if(Math.abs(a)<1e-9) return r[0]; return [cx/(3*a),cy/(3*a)]; };
+const pip = (x,y,ring) => { let ins=false; for(let i=0,j=ring.length-1;i<ring.length;j=i++){const [xi,yi]=ring[i],[xj,yj]=ring[j]; if((yi>y)!==(yj>y) && x<(xj-xi)*(y-yi)/(yj-yi)+xi) ins=!ins;} return ins; };
+/* label point: centroid if inside, otherwise the inside grid point farthest from the edge */
+const labelPoint = ring => { const c = centroid(ring); if (pip(c[0],c[1],ring)) return c; const [x0,y0,x1,y1]=bounds([ring]); let best=c,bd=-1; for(let i=1;i<12;i++)for(let j=1;j<12;j++){const x=x0+(x1-x0)*i/12,y=y0+(y1-y0)*j/12; if(!pip(x,y,ring))continue; let d=1e18; for(const e of edgesOf(ring)){d=Math.min(d,segDist(x,y,e.a,e.b));} if(d>bd){bd=d;best=[x,y];}} return best; };
+const segDist = (x,y,a,b) => { const dx=b[0]-a[0],dy=b[1]-a[1],L=dx*dx+dy*dy; let t=L?((x-a[0])*dx+(y-a[1])*dy)/L:0; t=Math.max(0,Math.min(1,t)); return Math.hypot(x-a[0]-t*dx,y-a[1]-t*dy); };
+
+/* ---------- PDOK (werkt op een eigen webadres; in een voorbeeldpagina van Claude geblokkeerd) ---------- */
+let searchTimer = null, searchSeq = 0;
+async function liveSearch(q){
+  const seq = ++searchSeq;
+  if (q.trim().length < 4){ S.live=[]; S.liveState=""; renderResults(); return; }
+  S.liveState = "zoeken"; renderResults();
+  try {
+    const u = "https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?fq=type:adres&rows=6&fl=id,weergavenaam,centroide_rd&q=" + encodeURIComponent(q);
+    const r = await fetch(u); if (!r.ok) throw new Error(r.status);
+    const d = await r.json(); if (seq !== searchSeq) return;
+    S.live = d.response.docs.map(x => { const m = /POINT\(([\d.]+) ([\d.]+)\)/.exec(x.centroide_rd||""); return m ? {name:x.weergavenaam, x:+m[1], y:+m[2]} : null; }).filter(Boolean);
+    S.live = S.live.filter((h,i,all) => all.findIndex(o => o.name === h.name) === i);
+    S.liveState = S.live.length ? "ok" : "leeg";
+  } catch (e) { if (seq !== searchSeq) return; S.live=[]; S.liveState="geblokkeerd"; }
+  renderResults();
+}
+async function openLive(hit){
+  S.liveState = "pand"; renderResults();
+  try {
+    const d = 1.0, bb = [hit.x-d,hit.y-d,hit.x+d,hit.y+d].join(",");
+    const u = `https://service.pdok.nl/lv/bag/wfs/v2_0?service=WFS&version=2.0.0&request=GetFeature&typeNames=bag:pand&outputFormat=application/json&srsName=EPSG:28992&count=10&bbox=${bb},EPSG:28992`;
+    const r = await fetch(u); if (!r.ok) throw new Error(r.status);
+    const fc = await r.json();
+    const polys = fc.features.filter(f=>f.geometry).map(f => ({f, rings: f.geometry.type==="Polygon" ? f.geometry.coordinates : f.geometry.coordinates[0]}));
+    const hitP = polys.find(p => pip(hit.x,hit.y,p.rings[0])) || polys[0];
+    if (!hitP) throw new Error("geen pand");
+    const rings = hitP.rings.map(r => r.map(p => [p[0],p[1]]));
+    const [x0,y0,x1,y1] = bounds(rings), m = 10;
+    const bbox = [x0-m,y0-m,x1+m,y1+m], res = Math.max(0.1, Math.max(bbox[2]-bbox[0], bbox[3]-bbox[1])/1100);
+    const W = Math.round((bbox[2]-bbox[0])/res), H = Math.round((bbox[3]-bbox[1])/res);
+    const photo = `https://service.pdok.nl/hwh/luchtfotorgb/wms/v1_0?service=WMS&version=1.3.0&request=GetMap&layers=Actueel_orthoHR&styles=&crs=EPSG:28992&bbox=${bbox.join(",")}&width=${W}&height=${H}&format=image/jpeg`;
+    const p = hitP.f.properties || {};
+    openBuilding({ id:"pand-"+p.identificatie, address:hit.name, pandId:p.identificatie, bouwjaar:p.bouwjaar, gebruiksdoel:p.gebruiksdoel, bag:rings, neighbours:[], live:true,
+      parts:[{name:"Dak 1", roof:true, area:partArea({rings}), z:null, slope:null, rings, fromBag:true}], photo:{bbox, src:photo} });
+  } catch (e) { S.liveState = "pandfout"; renderResults(); }
+}
+
+/* ---------- schermen ---------- */
+function go(view){ S.view = view; S.selEdge = null; render(); window.scrollTo(0,0); }
+function render(){
+  const bar = $("#bar");
+  if (S.view === "zoeken"){
+    bar.innerHTML = `<div class="brand">Roof360 Measure<small>Webvoorbeeld</small></div>`;
+    renderSearch();
+  } else if (S.view === "gebouw"){
+    bar.innerHTML = `<button class="icon" id="back" aria-label="Terug naar zoeken">‹</button><h1>${esc(S.building.address.split(",")[0])}</h1>`;
+    $("#back").onclick = () => go("zoeken");
+    renderBuilding();
+  } else {
+    bar.innerHTML = `<button class="icon" id="back" aria-label="Terug naar gebouw">‹</button><h1>Meten · ${esc(S.part.name)}</h1>`;
+    $("#back").onclick = () => go("gebouw");
+    renderMeasure();
+  }
+}
+
+function renderSearch(){
+  $("#view").innerHTML = `
+    <section class="panel">
+      <h2>Gebouw opzoeken</h2>
+      <label class="small muted" for="q">Typ een adres, bijvoorbeeld <i>Stationsplein 1 Zwijndrecht</i></label>
+      <input type="search" id="q" autocomplete="off" enterkeyhint="search" placeholder="Straat, huisnummer, plaats" value="${esc(S.query)}">
+    </section>
+    <div id="results" style="display:grid;gap:14px"></div>`;
+  const q = $("#q");
+  q.oninput = () => { S.query = q.value; renderResults(); clearTimeout(searchTimer); searchTimer = setTimeout(()=>liveSearch(S.query), 350); };
+  renderResults();
+}
+function renderResults(){
+  const box = $("#results"); if (!box) return;
+  const q = S.query.trim().toLowerCase();
+  const words = q.split(/[\s,]+/).filter(Boolean);
+  const tests = TEST.filter(b => words.every(w => b.address.toLowerCase().includes(w)));
+  let live = "";
+  const st = S.liveState;
+  if (st === "zoeken") live = `<p class="small muted">Zoeken bij PDOK…</p>`;
+  else if (st === "pand") live = `<p class="small muted">Gebouw ophalen uit de BAG…</p>`;
+  else if (st === "geblokkeerd") live = `<p class="note">Zoeken op elk adres in Nederland werkt pas als dit voorbeeld op een eigen webadres staat. Hier kun je de testgebouwen hieronder openen.</p>`;
+  else if (st === "pandfout") live = `<p class="note">Bij dit adres is geen gebouw gevonden in de BAG. Kies een ander adres.</p>`;
+  else if (st === "leeg") live = `<p class="small muted">PDOK vond geen adres. Controleer de spelling.</p>`;
+  if (S.live.length) live += `<div class="list">${S.live.map((h,i)=>`<button class="item" data-live="${i}"><span class="grow"><b>${esc(h.name)}</b><span class="sub">BAG-omtrek en luchtfoto, daken nog niet herkend</span></span><span class="tag live">live</span><span class="chev">›</span></button>`).join("")}</div>`;
+  box.innerHTML = `${live ? `<section style="display:grid;gap:10px">${S.live.length?'<h2>Adressen uit PDOK</h2>':''}${live}</section>` : ""}
+    <section style="display:grid;gap:10px">
+      <h2>Testgebouwen met herkende daken</h2>
+      ${tests.length ? `<div class="list">${tests.map(b=>{
+        const roofs = b.parts.filter(p=>p.roof).length, luif = b.parts.length - roofs;
+        return `<button class="item" data-test="${esc(b.id)}"><span class="grow"><b>${esc(b.address.split(",")[0])}</b><span class="sub">${esc(b.address.split(",").slice(1).join(",").trim())} · ${roofs} ${roofs===1?"dak":"daken"}${luif?` + ${luif} ${luif===1?"luifel":"luifels"}`:""}</span></span><span class="chev">›</span></button>`;}).join("")}</div>`
+        : `<p class="small muted">Geen testgebouw met “${esc(S.query)}”.</p>`}
+    </section>`;
+  box.querySelectorAll("[data-test]").forEach(b => b.onclick = () => openBuilding(TEST.find(t => t.id === b.dataset.test)));
+  box.querySelectorAll("[data-live]").forEach(b => b.onclick = () => openLive(S.live[+b.dataset.live]));
+}
+
+function openBuilding(b){ S.building = b; S.part = null; S.liveState=""; S.live=[]; go("gebouw"); }
+
+function partState(b){ const st = store.get(b.id); st.skip = st.skip || {}; st.meas = st.meas || {}; st.force = st.force || {}; return st; }
+function partColor(b, p){ const i = b.parts.indexOf(p); return p.roof ? COLORS[i % COLORS.length] : LUIFEL; }
+
+function renderBuilding(){
+  const b = S.building, st = partState(b);
+  const rows = b.parts.map((p,i) => {
+    const calc = measureCalc(b, p, st), counts = !st.skip[p.name];
+    const m2 = calc.corrected ?? partArea(p);
+    const extra = [p.roof ? "dakvlak" : "luifel", p.z!=null ? `${nl(p.z,1)} m NAP` : null, p.slope!=null && p.slope>=10 ? `helling ${Math.round(p.slope)}°` : null, calc.used ? `${calc.used} ${calc.used===1?"maat":"maten"} gemeten` : null].filter(Boolean).join(" · ");
+    return `<div class="item"><span class="swatch" style="border-color:${partColor(b,p)};background:${partColor(b,p)}55"></span>
+      <button class="link grow" data-part="${i}" style="color:var(--fg)"><b>${esc(p.name)}</b><span class="sub">${esc(extra)}</span></button>
+      <span class="num" style="${counts?'':'text-decoration:line-through;color:var(--muted)'}">${nl(m2,2)} m²</span>
+      <label class="toggle" title="Telt mee in totaal"><input type="checkbox" data-count="${i}" ${counts?"checked":""} aria-label="${esc(p.name)} telt mee"></label></div>`;
+  }).join("");
+  const total = b.parts.reduce((s,p)=> st.skip[p.name] ? s : s + (measureCalc(b,p,st).corrected ?? partArea(p)), 0);
+  $("#view").innerHTML = `
+    <section style="display:grid;gap:8px">
+      <p class="small muted">${esc(b.address)} · pand ${esc(b.pandId)}${b.bouwjaar?` · bouwjaar ${b.bouwjaar}`:""}${b.gebruiksdoel?` · ${esc(b.gebruiksdoel)}`:""}</p>
+      <div class="mapwrap" id="map"></div>
+      <div class="chips" role="group" aria-label="Lagen">
+        ${chip("foto","Luchtfoto")}${chip("bag","BAG-omtrek")}${b.live?"":chip("herkend","Herkende daken")}${b.neighbours.length?chip("buren","Buren"):""}
+      </div>
+    </section>
+    ${b.live ? `<p class="note">Dit gebouw komt live uit de BAG. De automatische dakherkenning draait in dit voorbeeld nog niet, dus de BAG-omtrek staat als Dak 1 klaar om te meten.</p>` : ""}
+    <section style="display:grid;gap:10px">
+      <h2>Daken</h2>
+      <div class="list">${rows}</div>
+      <div class="panel"><div class="total"><span>Totaal dakoppervlak</span><span class="num">${nl(total,2)} m²</span></div>
+      <p class="small muted">Tik op een dak om de dakranden met de hand te meten. Zet het vinkje uit als iets geen dak is, zoals een lichtstraat of installatie: het telt dan niet mee.</p></div>
+    </section>`;
+  document.querySelectorAll(".chip").forEach(c => c.onclick = () => { S.layers[c.dataset.layer] = !S.layers[c.dataset.layer]; c.setAttribute("aria-pressed", S.layers[c.dataset.layer]); drawMap(); });
+  document.querySelectorAll("[data-part]").forEach(el => el.onclick = () => openPart(b.parts[+el.dataset.part]));
+  document.querySelectorAll("[data-count]").forEach(el => el.onchange = () => { const p = b.parts[+el.dataset.count]; const s = partState(b); if (el.checked) delete s.skip[p.name]; else s.skip[p.name] = true; store.set(b.id, s); renderBuilding(); });
+  setupMap(b, null);
+}
+const chip = (k, label) => `<button class="chip" data-layer="${k}" aria-pressed="${S.layers[k]}">${label}</button>`;
+function openPart(p){ S.part = p; go("meten"); }
+
+/* ---------- hand meten ---------- */
+const SHORT = 2;        // dakranden korter dan 2 m staan ingeklapt
+const WARN_DEV = 0.10;   // meer dan 10% verschil met de tekening: waarschijnlijk een typfout
+function measureCalc(b, p, st){
+  const meas = (st.meas[p.name]) || {}, force = (st.force[p.name]) || {};
+  const edges = edgesOf(p.rings[0]);
+  let sm = 0, sd = 0, used = 0;
+  const per = edges.map((e,i) => {
+    const v = meas[i]; if (v == null) return {e, v:null};
+    const dev = v / e.len - 1, flagged = Math.abs(dev) > WARN_DEV && !force[i];
+    if (!flagged){ sm += v; sd += e.len; used++; }
+    return {e, v, dev, flagged, forced: !!force[i]};
+  });
+  const k = used ? sm / sd : null;
+  const area = partArea(p);
+  return { per, k, used, area, corrected: k ? area * k * k : null };
+}
+function renderMeasure(){
+  const b = S.building, p = S.part, st = partState(b), c = measureCalc(b, p, st);
+  const meas = st.meas[p.name] || {};
+  const sloped = p.slope != null && p.slope >= 10;
+  $("#view").innerHTML = `
+    <section style="display:grid;gap:8px">
+      <div class="mapwrap" id="map"></div>
+      <p class="small muted">Tik op een dakrand op de kaart of in de lijst en vul de maat in die je op het dak hebt gemeten. De app rekent de oppervlakte opnieuw uit met al je gemeten maten samen.</p>
+    </section>
+    <section class="panel" id="result"></section>
+    <section style="display:grid;gap:10px">
+      <h2>Dakranden van ${esc(p.name)}</h2>
+      <div class="list" id="edges">${c.per.map((x,i)=>x.e.len<SHORT?"":`
+        <div class="edge" id="edge-${i}" data-edge="${i}">
+          <span class="lbl">DR${i+1}</span>
+          <span><span class="num">${nl(x.e.len,2)} m</span> <span class="small muted">getekend</span></span>
+          <input type="text" inputmode="decimal" id="m-${i}" aria-label="Gemeten lengte DR${i+1} in meter" placeholder="gemeten" value="${meas[i]!=null?nl(meas[i],2):""}">
+          <span class="msg" id="msg-${i}"></span>
+        </div>`).join("")}</div>
+      ${c.per.some(x=>x.e.len<SHORT) ? `<details class="panel"><summary class="small">Korte stukjes onder ${SHORT} m (${c.per.filter(x=>x.e.len<SHORT).length}), meestal niet nodig om te meten</summary><div class="list">${c.per.map((x,i)=>x.e.len>=SHORT?"":`
+        <div class="edge" id="edge-${i}" data-edge="${i}">
+          <span class="lbl">DR${i+1}</span>
+          <span><span class="num">${nl(x.e.len,2)} m</span> <span class="small muted">getekend</span></span>
+          <input type="text" inputmode="decimal" id="m-${i}" aria-label="Gemeten lengte DR${i+1} in meter" placeholder="gemeten" value="${meas[i]!=null?nl(meas[i],2):""}">
+          <span class="msg" id="msg-${i}"></span>
+        </div>`).join("")}</div></details>` : ""}
+      <div class="row2"><button id="clear">Maten wissen</button><button class="primary" id="done">Klaar</button></div>
+    </section>`;
+  c.per.forEach((x,i) => {
+    const inp = $("#m-"+i);
+    inp.onfocus = () => selectEdge(i, false);
+    inp.onchange = () => {
+      const v = parseNum(inp.value), s = partState(b); s.meas[p.name] = s.meas[p.name] || {}; s.force[p.name] = s.force[p.name] || {};
+      if (v == null) delete s.meas[p.name][i]; else if (!isNaN(v)) s.meas[p.name][i] = Math.round(v*100)/100;
+      delete s.force[p.name][i];
+      store.set(b.id, s); if (!isNaN(v) && v!=null) inp.value = nl(v,2); updateMeasure();
+    };
+  });
+  $("#clear").onclick = () => { const s = partState(b); delete s.meas[p.name]; delete s.force[p.name]; store.set(b.id, s); renderMeasure(); };
+  $("#done").onclick = () => go("gebouw");
+  setupMap(b, p);
+  updateMeasure();
+}
+function updateMeasure(){
+  const b = S.building, p = S.part, st = partState(b), c = measureCalc(b, p, st);
+  c.per.forEach((x,i) => {
+    const m = $("#msg-"+i); if (!m) return;
+    if (x.v == null){ m.className="msg"; m.innerHTML=""; return; }
+    const pct = (x.dev*100).toLocaleString("nl-NL",{maximumFractionDigits:1, signDisplay:"always"});
+    if (x.flagged){ m.className="msg warn"; m.innerHTML = `${pct}% ten opzichte van de tekening. Klopt deze maat? Hij telt nu niet mee. <button class="link" data-force="${i}">Toch meetellen</button>`; }
+    else { m.className="msg ok"; m.textContent = `${pct}% ten opzichte van de tekening${x.forced?" · meegeteld op jouw keuze":""}`; }
+  });
+  document.querySelectorAll("[data-force]").forEach(el => el.onclick = () => { const s = partState(b); s.force[p.name] = s.force[p.name] || {}; s.force[p.name][+el.dataset.force] = true; store.set(b.id, s); updateMeasure(); });
+  const sloped = p.slope != null && p.slope >= 10, cosS = sloped ? Math.cos(p.slope*Math.PI/180) : 1;
+  const shown = c.corrected ?? c.area;
+  $("#result").innerHTML = `
+    <h2>Oppervlakte ${esc(p.name)}</h2>
+    <div class="res">
+      <span>Volgens de tekening</span><span class="num">${nl(c.area,2)} m²</span>
+      ${c.k ? `<span>Schaal uit ${c.used} gemeten ${c.used===1?"maat":"maten"}</span><span class="num">× ${nl(c.k,4)}</span>
+      <span class="big">Met jouw maten</span><span class="num big">${nl(c.corrected,2)} m²</span>` :
+      `<span class="muted small" style="grid-column:1/3">Nog geen bruikbare maat ingevuld. Vul minstens één dakrand in, liefst de langste.</span>`}
+      ${sloped ? `<span class="small muted">Schuin dakvlak, helling ${Math.round(p.slope)}°</span><span class="num small">${nl(shown/cosS,2)} m² schuin</span>` : ""}
+    </div>`;
+  drawMap();
+}
+function selectEdge(i, focus){
+  S.selEdge = i;
+  document.querySelectorAll(".edge").forEach(el => el.classList.toggle("sel", +el.dataset.edge === i));
+  if (focus){ const inp = $("#m-"+i); const det = inp.closest("details"); if (det) det.open = true; inp.scrollIntoView({block:"center", behavior:"smooth"}); inp.focus({preventScroll:true}); }
+  drawMap();
+}
+
+/* ---------- kaart (RD-coördinaten in meters, y omgedraaid) ---------- */
+let MAP = null;
+function setupMap(b, part){
+  const el = $("#map");
+  const focus = part ? part.rings : b.bag.concat(b.parts.filter(p=>p.roof||true).flatMap(p=>p.rings));
+  const [x0,y0,x1,y1] = bounds(focus);
+  const pad = Math.max(x1-x0, y1-y0) * (part ? 0.14 : 0.06) + 2;
+  const fit = fitBox(x0-pad, y0-pad, x1+pad, y1+pad);
+  MAP = { el, b, part, fit, vb: {...fit} };
+  el.innerHTML = `<svg id="svg" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kaart van het dak"></svg>
+    <div class="mapctl"><button id="zin" aria-label="Inzoomen">+</button><button id="zout" aria-label="Uitzoomen">−</button><button id="zfit" aria-label="Passend maken" style="font-size:.95rem">⤢</button></div>`;
+  $("#zin").onclick = () => zoomAt(0.7); $("#zout").onclick = () => zoomAt(1/0.7); $("#zfit").onclick = () => { MAP.vb = {...MAP.fit}; drawMap(); };
+  attachGestures(el);
+  drawMap();
+}
+function fitBox(x0,y0,x1,y1){ const w=x1-x0,h=y1-y0,s=Math.max(w,h),cx=(x0+x1)/2,cy=(y0+y1)/2; return {x:cx-s/2, y:-(cy+s/2), w:s, h:s}; }
+function zoomAt(f, px, py){
+  const v = MAP.vb; px = px ?? 0.5; py = py ?? 0.5;
+  const nw = Math.min(Math.max(v.w*f, 4), MAP.fit.w*4);
+  const cx = v.x + v.w*px, cy = v.y + v.h*py;
+  MAP.vb = {x: cx - nw*px, y: cy - nw*py, w: nw, h: nw}; drawMap();
+}
+function attachGestures(el){
+  const pts = new Map(); let start = null, moved = false;
+  el.addEventListener("pointerdown", e => { if (e.target.closest(".mapctl")) return; el.setPointerCapture(e.pointerId); pts.set(e.pointerId,{x:e.clientX,y:e.clientY}); start = {vb:{...MAP.vb}, pts:new Map([...pts].map(([k,v])=>[k,{...v}]))}; moved = false; });
+  el.addEventListener("pointermove", e => {
+    if (!pts.has(e.pointerId)) return; pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    const r = el.getBoundingClientRect(), scale = start.vb.w / r.width;
+    const cur = [...pts.values()], st = [...start.pts.values()];
+    if (cur.length === 1 && st.length >= 1){
+      const dx = cur[0].x - st[0].x, dy = cur[0].y - st[0].y; if (Math.hypot(dx,dy) > 6) moved = true;
+      if (moved){ MAP.vb = {...start.vb, x:start.vb.x - dx*scale, y:start.vb.y - dy*scale}; drawMap(); }
+    } else if (cur.length >= 2 && st.length >= 2){
+      moved = true;
+      const d0 = Math.hypot(st[0].x-st[1].x, st[0].y-st[1].y), d1 = Math.hypot(cur[0].x-cur[1].x, cur[0].y-cur[1].y);
+      const f = d0 / Math.max(d1, 1), nw = Math.min(Math.max(start.vb.w*f, 4), MAP.fit.w*4);
+      const mx0 = (st[0].x+st[1].x)/2 - r.left, my0 = (st[0].y+st[1].y)/2 - r.top, mx1 = (cur[0].x+cur[1].x)/2 - r.left, my1 = (cur[0].y+cur[1].y)/2 - r.top;
+      const wx = start.vb.x + mx0*scale, wy = start.vb.y + my0*scale, s2 = nw / r.width;
+      MAP.vb = {x: wx - mx1*s2, y: wy - my1*s2, w: nw, h: nw}; drawMap();
+    }
+  });
+  const end = e => {
+    if (!pts.has(e.pointerId)) return; pts.delete(e.pointerId);
+    if (!moved && pts.size === 0){ const t = document.elementFromPoint(e.clientX, e.clientY); tapOn(t); }
+    start = {vb:{...MAP.vb}, pts:new Map([...pts].map(([k,v])=>[k,{...v}]))};
+  };
+  el.addEventListener("pointerup", end); el.addEventListener("pointercancel", e => { pts.delete(e.pointerId); });
+  el.addEventListener("wheel", e => { e.preventDefault(); const r = el.getBoundingClientRect(); zoomAt(e.deltaY > 0 ? 1.15 : 1/1.15, (e.clientX-r.left)/r.width, (e.clientY-r.top)/r.height); }, {passive:false});
+}
+function tapOn(t){
+  if (!t) return;
+  const e = t.closest("[data-edgehit]"), p = t.closest("[data-parthit]");
+  if (e && MAP.part){ selectEdge(+e.dataset.edgehit, true); return; }
+  if (p && !MAP.part){ openPart(MAP.b.parts[+p.dataset.parthit]); }
+}
+const pathD = rings => rings.map(r => "M" + openRing(r).map(p => `${p[0].toFixed(2)},${(-p[1]).toFixed(2)}`).join("L") + "Z").join("");
+function drawMap(){
+  if (!MAP) return;
+  const svg = $("#svg"); if (!svg) return;
+  const {b, part, vb} = MAP, L = S.layers;
+  const px = vb.w / (MAP.el.getBoundingClientRect().width || 400);   // meters per schermpixel
+  svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  const ph = b.photo, out = [];
+  out.push(`<rect x="${vb.x-vb.w}" y="${vb.y-vb.h}" width="${vb.w*3}" height="${vb.h*3}" fill="var(--map-bg)"/>`);
+  if (L.foto && ph) out.push(`<image href="${ph.src}" x="${ph.bbox[0]}" y="${-ph.bbox[3]}" width="${ph.bbox[2]-ph.bbox[0]}" height="${ph.bbox[3]-ph.bbox[1]}" preserveAspectRatio="none"/>`);
+  if (L.buren && !part) for (const r of b.neighbours) out.push(`<path d="${pathD([r])}" fill="rgb(255 255 255 / .12)" stroke="#ffffff" stroke-opacity=".7" stroke-width="${1*px}"/>`);
+  const st = partState(b);
+  if (!part){
+    if (L.herkend || b.live) b.parts.forEach((p,i) => {
+      const col = partColor(b,p), skip = st.skip[p.name];
+      out.push(`<path data-parthit="${i}" d="${pathD(p.rings)}" fill="${col}" fill-opacity="${skip?0.08:0.38}" fill-rule="evenodd" stroke="${col}" stroke-width="${2*px}" ${skip?`stroke-dasharray="${4*px} ${3*px}"`:""} style="cursor:pointer"/>`);
+    });
+    if (L.bag) out.push(`<path d="${pathD(b.bag)}" fill="none" stroke="var(--bag)" stroke-width="${2.5*px}" stroke-dasharray="${7*px} ${5*px}" pointer-events="none"/>`);
+    if (L.herkend || b.live) b.parts.forEach((p,i) => {
+      const big = p.rings.reduce((a,r)=>Math.abs(shoelace(openRing(r)))>Math.abs(shoelace(openRing(a)))?r:a, p.rings[0]);
+      const [cx,cy] = labelPoint(openRing(big));
+      out.push(label(cx, -cy, p.name, px, 13, "#16222b", "#ffffff", i));
+    });
+  } else {
+    if (L.bag) out.push(`<path d="${pathD(b.bag)}" fill="none" stroke="var(--bag)" stroke-width="${2*px}" stroke-dasharray="${7*px} ${5*px}" pointer-events="none"/>`);
+    const col = partColor(b, part);
+    out.push(`<path d="${pathD(part.rings)}" fill="${col}" fill-opacity=".28" fill-rule="evenodd" stroke="none" pointer-events="none"/>`);
+    const c = measureCalc(b, part, st);
+    c.per.forEach((x,i) => {
+      const sel = S.selEdge === i, done = x.v != null, color = sel ? "#ffffff" : done ? (x.flagged ? "#e8a23d" : "#4cc58a") : col;
+      const a = x.e.a, bb = x.e.b;
+      out.push(`<line x1="${a[0]}" y1="${-a[1]}" x2="${bb[0]}" y2="${-bb[1]}" stroke="#000" stroke-opacity=".35" stroke-width="${(sel?7:5)*px}" stroke-linecap="round" pointer-events="none"/>`);
+      out.push(`<line x1="${a[0]}" y1="${-a[1]}" x2="${bb[0]}" y2="${-bb[1]}" stroke="${color}" stroke-width="${(sel?4.5:3)*px}" stroke-linecap="round" pointer-events="none"/>`);
+      out.push(`<line data-edgehit="${i}" x1="${a[0]}" y1="${-a[1]}" x2="${bb[0]}" y2="${-bb[1]}" stroke="transparent" stroke-width="${22*px}" style="cursor:pointer"/>`);
+    });
+    c.per.forEach((x,i) => {
+      if (x.e.len < 9*px*3 && S.selEdge !== i) return;   // te kort op dit zoomniveau
+      const mx = (x.e.a[0]+x.e.b[0])/2, my = (x.e.a[1]+x.e.b[1])/2;
+      const txt = `DR${i+1}` + (x.v != null ? ` · ${nl(x.v,2)}` : "");
+      out.push(label(mx, -my, txt, px, 12, S.selEdge===i ? "#ffffff" : "#16222b", S.selEdge===i ? "#1d4e6e" : "#ffffff", null, i));
+    });
+  }
+  svg.innerHTML = out.join("");
+}
+function label(x, y, text, px, size, fg, bg, partIdx, edgeIdx){
+  const fs = size*px, w = (text.length*0.6*size + 10)*px, h = (size+8)*px;
+  const hit = partIdx != null ? `data-parthit="${partIdx}"` : edgeIdx != null ? `data-edgehit="${edgeIdx}"` : "";
+  return `<g ${hit} style="cursor:pointer"><rect x="${x-w/2}" y="${y-h/2}" width="${w}" height="${h}" rx="${4*px}" fill="${bg}" fill-opacity=".92"/><text x="${x}" y="${y+fs*0.36}" font-size="${fs}" font-family="IBM Plex Sans,-apple-system,sans-serif" font-weight="600" text-anchor="middle" fill="${fg}">${esc(text)}</text></g>`;
+}
+window.addEventListener("resize", () => drawMap());
+
+render();
+})();
+</script>
+
+</body>
+</html>

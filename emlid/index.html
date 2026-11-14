@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Emlid test">
+<title>Emlid dak-test</title>
+<style>
+/* Layout: één kolom voor buiten op het dak, grote cijfers, hoog contrast in de zon. */
+:root{
+  --bg:#f3f5f4; --panel:#ffffff; --fg:#14201c; --muted:#56655f; --line:#d5dcd9;
+  --accent:#0b6b55; --accent-fg:#ffffff;
+  --ok:#0f7a3d; --warn:#a46200; --bad:#b3261e;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f1513; --panel:#18211e; --fg:#e8efec; --muted:#9aaba4; --line:#2b3833;
+  --accent:#3fbf98; --accent-fg:#06231b; --ok:#4cc77e; --warn:#e0a33a; --bad:#f07068; color-scheme:dark}}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.45 var(--font);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+main{max-width:560px;margin:0 auto;display:grid;gap:14px}
+h1{font-size:1.35rem;margin:0}
+h2{font-size:1rem;margin:0 0 8px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+p{margin:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:grid;gap:10px}
+.lead{color:var(--muted)}
+button{font:inherit;font-weight:600;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--fg);
+  padding:14px 12px;min-height:52px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
+button:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.status{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.1rem}
+.dot{width:16px;height:16px;border-radius:50%;background:var(--muted);flex:none}
+.s-ok .dot{background:var(--ok)} .s-warn .dot{background:var(--warn)} .s-bad .dot{background:var(--bad)}
+.big{font:700 2.6rem/1.1 var(--font);font-variant-numeric:tabular-nums}
+.big small{font-size:1rem;font-weight:600;color:var(--muted)}
+dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0}
+dt{color:var(--muted)} dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;overflow-wrap:anywhere}
+label{display:grid;gap:4px;color:var(--muted)}
+input{font:inherit;font-family:var(--mono);padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);width:100%}
+.pt{display:grid;gap:6px}
+.pt b{font-size:1.05rem}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.result{font:700 1.8rem/1.2 var(--font);font-variant-numeric:tabular-nums}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:6px 4px;border-bottom:1px solid var(--line)}
+th:first-child,td:first-child{text-align:left}
+.msg{padding:12px;border-radius:10px;border:1px solid var(--bad);color:var(--bad);font-weight:600}
+.note{color:var(--muted);font-size:.9rem}
+ol{margin:0;padding-left:20px;display:grid;gap:4px}
+textarea{width:100%;min-height:120px;font:13px/1.4 var(--mono);background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:8px}
+</style>
+</head>
+<body>
+<main>
+  <header class="panel">
+    <h1>Emlid dak-test</h1>
+    <p class="lead">Laat zien welke positie Safari van de iPhone krijgt. Komt de Emlid Reach RX door, dan staat de nauwkeurigheid op een paar centimeter. Deze pagina hoort niet bij de Roof360-app en bewaart niets op een server.</p>
+  </header>
+
+  <div id="error" class="msg" hidden></div>
+
+  <section class="panel" aria-live="polite">
+    <div id="status" class="status"><span class="dot"></span><span id="statusText">Nog niet gestart</span></div>
+    <div class="big"><span id="acc">–</span> <small id="accUnit"></small></div>
+    <p class="note">Horizontale nauwkeurigheid zoals de iPhone die meldt.</p>
+    <dl>
+      <dt>Breedte (lat)</dt><dd id="lat">–</dd>
+      <dt>Lengte (lon)</dt><dd id="lon">–</dd>
+      <dt>Hoogte</dt><dd id="alt">–</dd>
+      <dt>Hoogte-nauwk.</dt><dd id="altAcc">–</dd>
+      <dt>Laatste meting</dt><dd id="age">–</dd>
+      <dt>Metingen/sec</dt><dd id="rate">–</dd>
+    </dl>
+    <div class="row">
+      <button id="start" class="primary">Start</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Afstand meten</h2>
+    <label for="ref">Echte afstand (meetlint), meter
+      <input id="ref" inputmode="decimal" value="10.000">
+    </label>
+    <label for="secs">Middelen over (seconden)
+      <input id="secs" inputmode="numeric" value="5">
+    </label>
+    <div class="row">
+      <button id="btnA" disabled>Punt A meten</button>
+      <button id="btnB" disabled>Punt B meten</button>
+    </div>
+    <div class="row">
+      <div class="pt"><b>A</b><span id="ptA" class="mono note">–</span></div>
+      <div class="pt"><b>B</b><span id="ptB" class="mono note">–</span></div>
+    </div>
+    <div>
+      <div class="result" id="dist">–</div>
+      <p class="note" id="distNote">Meet A en B om de afstand te zien.</p>
+    </div>
+    <button id="save" disabled>Bewaar deze meting</button>
+  </section>
+
+  <section class="panel">
+    <h2>Bewaarde metingen</h2>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr><th>#</th><th>Afstand</th><th>Verschil</th><th>Nauwk. A/B</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="note">Nog geen metingen. Doel: 5 keer meten, elke keer binnen 3 cm van het meetlint.</td></tr></tbody>
+      </table>
+    </div>
+    <p id="summary" class="note"></p>
+    <div class="row">
+      <button id="copy">Kopieer uitslag</button>
+      <button id="clear">Wis metingen</button>
+    </div>
+    <textarea id="out" readonly aria-label="Uitslag om te plakken" hidden></textarea>
+  </section>
+
+  <section class="panel">
+    <h2>Zo test je</h2>
+    <ol>
+      <li>Koppel de Reach RX in Emlid Flow en wacht op FIX.</li>
+      <li>iPhone: Instellingen › Privacy › Locatievoorzieningen › Safari-websites › ‘Bij gebruik’ en ‘Nauwkeurige locatie’ aan.</li>
+      <li>Druk op Start. Staat de nauwkeurigheid op een paar cm, dan komt de Emlid door. Staat hij op meters, dan is het de gewone iPhone-gps.</li>
+      <li>Leg een meetlint van 10 m. Zet de stok op het begin, druk ‘Punt A meten’. Stok op het eind, ‘Punt B meten’. Bewaar. Doe dit 5 keer.</li>
+      <li>Zorg één keer voor FLOAT in Flow (stok schuin of tegen een opstand) en kijk wat de nauwkeurigheid hier doet.</li>
+      <li>Herhaal kort met scherm even uit en weer aan, en vanaf het beginscherm (Deel › Zet op beginscherm).</li>
+      <li>Druk ‘Kopieer uitslag’ en plak die in de chat bij Claude.</li>
+    </ol>
+  </section>
+</main>
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var watchId = null, last = null, stamps = [], collecting = null, A = null, B = null, events = [];
+  var saved = [];
+  try { saved = JSON.parse(localStorage.getItem("emlidtest.saved") || "[]") || []; } catch(e) { saved = []; }
+  var wakeLock = null;
+
+  function log(type, detail){ events.push(new Date().toISOString().slice(11,19) + " " + type + (detail ? " " + detail : "")); if (events.length > 40) events.shift(); }
+  function num(v, d){ return (v === null || v === undefined || isNaN(v)) ? "–" : Number(v).toFixed(d).replace(".", ","); }
+  function parseNum(s){ var v = parseFloat(String(s).replace(",", ".")); return isNaN(v) ? null : v; }
+  function showError(t){ var e = $("error"); e.textContent = t; e.hidden = !t; }
+
+  function classify(acc){
+    if (acc == null) return ["", "Wacht op positie…"];
+    if (acc <= 0.03) return ["s-ok", "Emlid RTK FIX (waarschijnlijk)"];
+    if (acc <= 0.5) return ["s-warn", "Goed, maar geen FIX (FLOAT?)"];
+    return ["s-bad", "Gewone iPhone-gps"];
+  }
+
+  // Lokale afstand in meters tussen twee WGS84-punten (op 10 m nauwkeurig tot ver onder de millimeter).
+  function distance(p, q){
+    var a = 6378137, f = 1/298.257223563, e2 = f*(2-f);
+    var lat = (p.lat + q.lat) / 2 * Math.PI/180;
+    var s = Math.sin(lat), w = Math.sqrt(1 - e2*s*s);
+    var M = a*(1-e2)/(w*w*w), N = a/w;
+    var dN = (q.lat - p.lat) * Math.PI/180 * M;
+    var dE = (q.lon - p.lon) * Math.PI/180 * N * Math.cos(lat);
+    return Math.sqrt(dN*dN + dE*dE);
+  }
+
+  function render(){
+    var c = last && last.coords;
+    var acc = c ? c.accuracy : null;
+    var cl = classify(acc);
+    $("status").className = "status " + cl[0];
+    $("statusText").textContent = watchId === null && !last ? "Nog niet gestart" : cl[1];
+    if (acc == null) { $("acc").textContent = "–"; $("accUnit").textContent = ""; }
+    else if (acc < 1) { $("acc").textContent = num(acc*100, 1); $("accUnit").textContent = "cm"; }
+    else { $("acc").textContent = num(acc, 1); $("accUnit").textContent = "m"; }
+    $("lat").textContent = c ? c.latitude.toFixed(8) : "–";
+    $("lon").textContent = c ? c.longitude.toFixed(8) : "–";
+    $("alt").textContent = c && c.altitude != null ? num(c.altitude, 3) + " m" : "–";
+    $("altAcc").textContent = c && c.altitudeAccuracy != null ? num(c.altitudeAccuracy, 3) + " m" : "–";
+    $("age").textContent = last ? num((Date.now() - last.timestamp)/1000, 1) + " s geleden" : "–";
+    var now = Date.now(); stamps = stamps.filter(function(t){ return now - t < 5000; });
+    $("rate").textContent = watchId !== null ? num(stamps.length/5, 1) : "–";
+    var running = watchId !== null;
+    $("start").disabled = running; $("stop").disabled = !running;
+    $("btnA").disabled = !running || !!collecting; $("btnB").disabled = !running || !!collecting;
+  }
+
+  function onPos(pos){
+    last = pos; stamps.push(Date.now()); showError("");
+    if (collecting) collecting.samples.push({lat: pos.coords.latitude, lon: pos.coords.longitude, alt: pos.coords.altitude, acc: pos.coords.accuracy});
+    render();
+  }
+  function onErr(err){
+    log("fout", err.code + " " + err.message);
+    if (err.code === 1) showError("Safari mag je locatie niet gebruiken. Zet bij Instellingen › Privacy › Locatievoorzieningen › Safari-websites ‘Bij gebruik’ en ‘Nauwkeurige locatie’ aan, en open deze pagina rechtstreeks in Safari (niet in een andere app).");
+    else if (err.code === 3) showError("Geen positie binnen de tijd. Sta je buiten met vrij zicht op de lucht?");
+    else showError("Positie niet beschikbaar: " + err.message);
+  }
+
+  function start(){
+    if (!("geolocation" in navigator)) { showError("Deze browser geeft geen locatie door. Open de pagina in Safari."); return; }
+    if (!window.isSecureContext) { showError("Deze pagina moet via https geopend worden, anders geeft Safari geen locatie."); return; }
+    watchId = navigator.geolocation.watchPosition(onPos, onErr, {enableHighAccuracy: true, maximumAge: 0, timeout: 30000});
+    log("start");
+    try { if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function(l){ wakeLock = l; }).catch(function(){}); } catch(e) {}
+    render();
+  }
+  function stop(){
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    watchId = null; collecting = null; log("stop");
+    try { if (wakeLock) wakeLock.release(); } catch(e) {} wakeLock = null;
+    render();
+  }
+
+  function collect(which){
+    var secs = Math.max(1, Math.min(60, parseNum($("secs").value) || 5));
+    collecting = {which: which, samples: []};
+    // Staat de stok stil, dan stuurt de iPhone soms geen nieuwe posities. Begin daarom met de laatste, als die vers is.
+    if (last && Date.now() - last.timestamp < 5000) collecting.samples.push({lat: last.coords.latitude, lon: last.coords.longitude, alt: last.coords.altitude, acc: last.coords.accuracy});
+    var el = which === "A" ? $("ptA") : $("ptB");
+    var t0 = Date.now();
+    var tick = setInterval(function(){
+      var left = Math.ceil(secs - (Date.now()-t0)/1000);
+      el.textContent = "Stil houden… " + Math.max(0,left) + " s (" + collecting.samples.length + ")";
+    }, 200);
+    render();
+    setTimeout(function(){
+      clearInterval(tick);
+      var s = collecting ? collecting.samples : [];
+      collecting = null;
+      if (!s.length) { el.textContent = "Geen posities ontvangen. Probeer opnieuw."; render(); return; }
+      var m = {lat:0, lon:0, acc:0, alt:0, altN:0, n:s.length, worst:0};
+      s.forEach(function(x){ m.lat += x.lat; m.lon += x.lon; m.acc += x.acc; m.worst = Math.max(m.worst, x.acc); if (x.alt != null) { m.alt += x.alt; m.altN++; } });
+      m.lat /= s.length; m.lon /= s.length; m.acc /= s.length; m.alt = m.altN ? m.alt/m.altN : null;
+      var spread = 0; s.forEach(function(x){ spread = Math.max(spread, distance(m, x)); });
+      m.spread = spread;
+      if (which === "A") A = m; else B = m;
+      el.textContent = m.n + " posities, nauwk. " + num(m.acc*100,1) + " cm, spreiding " + num(spread*100,1) + " cm";
+      log("punt " + which, "n=" + m.n + " acc=" + m.acc.toFixed(3));
+      showDistance(); render();
+    }, secs*1000);
+  }
+
+  function showDistance(){
+    if (!A || !B) { $("dist").textContent = "–"; $("save").disabled = true; return; }
+    var d = distance(A, B), ref = parseNum($("ref").value);
+    $("dist").textContent = num(d, 3) + " m";
+    var txt = "";
+    if (ref) { var diff = d - ref; txt = "Verschil met meetlint: " + (diff >= 0 ? "+" : "") + num(diff*100, 1) + " cm " + (Math.abs(diff) <= 0.03 ? "(goed, binnen 3 cm)" : "(meer dan 3 cm)"); }
+    if (A.alt != null && B.alt != null) txt += (txt ? ". " : "") + "Hoogteverschil " + num((B.alt - A.alt)*100, 1) + " cm";
+    $("distNote").textContent = txt;
+    $("save").disabled = false;
+  }
+
+  function persist(){ try { localStorage.setItem("emlidtest.saved", JSON.stringify(saved)); } catch(e) {} }
+
+  function renderRows(){
+    var tb = $("rows");
+    if (!saved.length) { tb.innerHTML = '<tr><td colspan="4" class="note">Nog geen metingen. Doel: 5 keer meten, elke keer binnen 3 cm van het meetlint.</td></tr>'; $("summary").textContent = ""; return; }
+    tb.innerHTML = "";
+    saved.forEach(function(r, i){
+      var tr = document.createElement("tr");
+      [String(i+1), num(r.d,3) + " m", r.ref ? ((r.d-r.ref >= 0 ? "+" : "") + num((r.d-r.ref)*100,1) + " cm") : "–", num(r.accA*100,1) + " / " + num(r.accB*100,1) + " cm"].forEach(function(t){ var td = document.createElement("td"); td.textContent = t; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+    var ds = saved.map(function(r){ return r.d; });
+    var mean = ds.reduce(function(a,b){ return a+b; }, 0) / ds.length;
+    var spread = Math.max.apply(null, ds) - Math.min.apply(null, ds);
+    var within = saved.filter(function(r){ return r.ref && Math.abs(r.d - r.ref) <= 0.03; }).length;
+    $("summary").textContent = "Gemiddeld " + num(mean,3) + " m, spreiding " + num(spread*100,1) + " cm, " + within + " van " + saved.length + " binnen 3 cm.";
+  }
+
+  function report(){
+    var lines = ["Emlid dak-test " + new Date().toLocaleString("nl-NL"), "Browser: " + navigator.userAgent];
+    if (last) lines.push("Laatste positie: " + last.coords.latitude.toFixed(8) + ", " + last.coords.longitude.toFixed(8) + " nauwk " + last.coords.accuracy.toFixed(3) + " m, hoogte " + (last.coords.altitude != null ? last.coords.altitude.toFixed(3) : "-") + " m");
+    saved.forEach(function(r, i){ lines.push("Meting " + (i+1) + ": " + r.d.toFixed(3) + " m (meetlint " + (r.ref || "-") + " m), nauwk A " + r.accA.toFixed(3) + " B " + r.accB.toFixed(3) + ", spreiding A " + r.spA.toFixed(3) + " B " + r.spB.toFixed(3) + ", n " + r.nA + "/" + r.nB + ", " + r.t); });
+    if ($("summary").textContent) lines.push($("summary").textContent);
+    lines.push("Gebeurtenissen: " + events.join(" | "));
+    return lines.join("\n");
+  }
+
+  $("start").addEventListener("click", start);
+  $("stop").addEventListener("click", stop);
+  $("btnA").addEventListener("click", function(){ collect("A"); });
+  $("btnB").addEventListener("click", function(){ collect("B"); });
+  $("ref").addEventListener("input", showDistance);
+  $("save").addEventListener("click", function(){
+    if (!A || !B) return;
+    saved.push({d: distance(A,B), ref: parseNum($("ref").value), accA: A.acc, accB: B.acc, spA: A.spread, spB: B.spread, nA: A.n, nB: B.n, t: new Date().toLocaleTimeString("nl-NL")});
+    persist(); renderRows();
+    A = null; B = null; $("ptA").textContent = "–"; $("ptB").textContent = "–"; showDistance(); $("distNote").textContent = "Bewaard. Meet opnieuw A en B.";
+  });
+  $("clear").addEventListener("click", function(){
+    var b = $("clear");
+    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Zeker? Tik nog eens"; setTimeout(function(){ b.dataset.sure = ""; b.textContent = "Wis metingen"; }, 3000); return; }
+    saved = []; persist(); renderRows(); b.dataset.sure = ""; b.textContent = "Wis metingen";
+  });
+  $("copy").addEventListener("click", function(){
+    var text = report(), out = $("out");
+    out.value = text; out.hidden = false;
+    var done = function(){ $("copy").textContent = "Gekopieerd"; setTimeout(function(){ $("copy").textContent = "Kopieer uitslag"; }, 2000); };
+    try { navigator.clipboard.writeText(text).then(done, function(){ out.focus(); out.select(); }); } catch(e) { out.focus(); out.select(); }
+  });
+  document.addEventListener("visibilitychange", function(){
+    log(document.hidden ? "scherm weg" : "scherm terug");
+    if (!document.hidden && watchId !== null) { try { if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function(l){ wakeLock = l; }).catch(function(){}); } catch(e) {} }
+  });
+  setInterval(render, 500);
+  renderRows(); render();
+})();
+</script>
+</body>
+</html>
