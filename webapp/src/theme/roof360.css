@@ -1,0 +1,43 @@
+/*
+  Roof360 thema: alle kleuren en maten op één plek.
+  Overgenomen uit de iOS-app (HomeView.swift, HomeScreenPalette).
+  Wil je een kleur of maat aanpassen? Doe het hier, dan verandert het overal.
+*/
+:root {
+  /* Kleuren */
+  --r360-navy: #0A1A2E;          /* titels */
+  --r360-deep-navy: #081426;     /* tegels, begin van het verloop */
+  --r360-tile-end: #0A2440;      /* tegels, eind van het verloop */
+  --r360-accent: #00BDEB;        /* iconen, pijltjes, slogan */
+  --r360-background: #F5FAFF;    /* achtergrond van het scherm */
+  --r360-card-start: #FFFFFF;    /* lichte kaarten, begin verloop */
+  --r360-card-end: #EBFAFF;      /* lichte kaarten, eind verloop */
+  --r360-secondary: rgba(60, 60, 67, 0.6); /* grijze toelichtingstekst, zoals iOS */
+  --r360-tile-border: rgba(255, 255, 255, 0.12);
+  --r360-card-border: rgba(0, 189, 235, 0.22);
+  --r360-shadow: rgba(5, 20, 41, 0.12);
+
+  /* Maten (in punten, net als iOS) */
+  --r360-outer-padding: 22px;
+  --r360-section-spacing: 18px;
+  --r360-grid-spacing: 14px;
+  --r360-corner-radius: 18px;
+  --r360-card-padding: 16px;
+  --r360-small-radius: 8px;
+
+  /* Letters: op Apple-apparaten precies de iPhone-letter */
+  --r360-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --r360-font-rounded: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Ionic laten meedoen met onze kleuren */
+  --ion-font-family: var(--r360-font);
+  --ion-background-color: var(--r360-background);
+  --ion-text-color: var(--r360-navy);
+  --ion-color-primary: #00BDEB;
+  --ion-color-primary-rgb: 0, 189, 235;
+  --ion-color-primary-contrast: #081426;
+  --ion-color-primary-contrast-rgb: 8, 20, 38;
+  --ion-color-primary-shade: #00a6cf;
+  --ion-color-primary-tint: #1ac4ed;
+  --ion-toolbar-background: var(--r360-background);
+}

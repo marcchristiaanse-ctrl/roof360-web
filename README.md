@@ -18,3 +18,16 @@ Wat het kan
 Maten worden alleen in de browser bewaard (localStorage), niet in Supabase.
 
 Lokaal proberen: `python3 -m http.server` in deze map en open http://localhost:8000
+
+## Nieuwe webapp (React + TypeScript + Ionic)
+
+Opnieuw opgebouwd met de look and feel van de iOS-app.
+
+- Bekijken: https://marcchristiaanse-ctrl.github.io/roof360-web/nieuw/
+- Broncode: map `webapp/`. Kleuren en maten staan op één plek: `webapp/src/theme/roof360.css`.
+- Bouwen: `cd webapp && npm install && npm run build` (zet het resultaat in de map `nieuw/`).
+- Proberen op je eigen computer: `cd webapp && npm run dev`.
+- Klaar: thuisscherm. De andere schermen zijn nog leeg.
+- Achtergrondfoto: Erasmusbrug door Sanna Xu, Unsplash (https://unsplash.com/photos/l7syX8QoV1g).
+
+Nooit wachtwoorden, geheime sleutels of slimme logica in deze repo: hij is openbaar.
