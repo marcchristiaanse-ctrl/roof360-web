@@ -142,6 +142,7 @@ export type Dakrand = {
   id: string; roof_plane_id: string; sequence_number: number; code: string; length_m: number;
   source: 'measured' | 'manual'; is_estimated: boolean; start_point_id: string | null; end_point_id: string | null;
   checked_length_m: number | null; deviation_confirmed: boolean; // meetlintmaat (migratie 0010)
+  bag_reference_edge_id: string | null; // bij overname uit de tekening: deel:index van de lijn
   measurement_source: string | null; // core_location, reach_rx2_rtk, bag_reference (uit de tekening) of leeg (met de hand)
   version: number; deleted_at: string | null;
 };
