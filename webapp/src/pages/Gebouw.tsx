@@ -1,14 +1,20 @@
-// Eén gebouw: adres, daktekening en de versies ervan. Alleen lezen.
+// Eén gebouw: adres, daktekening en de versies ervan.
+// Op de tekening kun je een lijn aantikken en de echte maat invullen: dan schaalt alles mee.
 import {
   IonBackButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel, IonList, IonNote,
   IonPage, IonSpinner, IonTitle, IonToolbar, IonButton,
 } from '@ionic/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { IonInput, IonText } from '@ionic/react';
+import { lijnen, naam, zelfdeLijn, type Lijn } from '../components/DakTekening';
+import { afwijking, controleerMaat, procent, schaalFactor, TOEGESTANE_AFWIJKING, type Monster } from '../schaal';
+import { leesGetal } from '../components/GetalInvoer';
+import { bewaarTekening } from '../opslaan';
 import { useParams } from 'react-router-dom';
 import { DakTekening, oppervlakte } from '../components/DakTekening';
 import {
   adresRegel, besteVersie, bronNaam, gebouwTitel, haalGebouw, haalTekening, haalVersies,
-  type DakvlakSamenvatting, type Detectie, type GebouwLink, type TekeningVersie,
+  type GebouwLink, type MeetLijn, type Tekening, type TekeningVersie,
 } from '../gegevens';
 import { useBedrijf } from '../useBedrijf';
 import { haalProjecten, type Project } from '../opslaan';
@@ -26,7 +32,15 @@ export default function Gebouw() {
   const [link, setLink] = useState<GebouwLink | null | undefined>(undefined);
   const [versies, setVersies] = useState<TekeningVersie[]>([]);
   const [gekozen, setGekozen] = useState<string | null>(null);
-  const [tekening, setTekening] = useState<{ detectie: Detectie | null; dakvlakken: DakvlakSamenvatting[] } | null>(null);
+  const [tekening, setTekening] = useState<Tekening | null>(null);
+  // Met de hand gemeten lijnen; wijzigingen blijven eerst hier tot je op Opslaan tikt.
+  const [metingen, setMetingen] = useState<MeetLijn[]>([]);
+  const [gewijzigd, setGewijzigd] = useState(false);
+  const [lijn, setLijn] = useState<Lijn | null>(null);
+  const [maat, setMaat] = useState('');
+  const [maatFout, setMaatFout] = useState<string | null>(null);
+  const [opslaan, setOpslaan] = useState<'bezig' | 'klaar' | null>(null);
+  const [herladen, setHerladen] = useState(0);
   const [fout, setFout] = useState<string | null>(null);
   const [projecten, setProjecten] = useState<Project[]>([]);
 
@@ -38,23 +52,83 @@ export default function Gebouw() {
       .then(([l, v]) => {
         if (!actief) return;
         setLink(l); setVersies(v); setGekozen(besteVersie(v)?.id ?? null);
+        setGewijzigd(false);
       })
       .then(() => haalProjecten(bedrijf.tenant_id, id).then(p => actief && setProjecten(p)).catch(() => setProjecten([])))
       .catch(e => actief && setFout(e.message));
     return () => { actief = false; };
-  }, [bedrijf?.tenant_id, id]);
+  }, [bedrijf?.tenant_id, id, herladen]);
 
   useEffect(() => {
     if (!gekozen) { setTekening(null); return; }
     let actief = true;
     setTekening(null);
-    haalTekening(gekozen).then(t => actief && setTekening(t)).catch(e => actief && setFout(e.message));
+    setLijn(null); setMaat(''); setMaatFout(null);
+    haalTekening(gekozen).then(t => {
+      if (!actief) return;
+      setTekening(t); setMetingen(t.detectie?.measuredEdges ?? []); setGewijzigd(false);
+    }).catch(e => actief && setFout(e.message));
     return () => { actief = false; };
   }, [gekozen]);
 
   const versie = versies.find(v => v.id === gekozen);
-  const schaal = versie?.scale_factor ?? 1;
   const b = link?.building;
+
+  // Alleen metingen op lijnen die nog in de tekening staan tellen mee (zoals in de iOS-app).
+  const delen = tekening?.detectie?.parts ?? [];
+  const alleLijnen = useMemo(() => lijnen(delen), [delen]);
+  const actief = metingen
+    .map(m => ({ m, l: alleLijnen.find(l => zelfdeLijn(l, m.start, m.end)) }))
+    .filter((x): x is { m: MeetLijn; l: Lijn } => !!x.l);
+  const monster = (x: { m: MeetLijn; l: Lijn }): Monster => ({ gemeten: x.m.lengthMeters, getekend: x.l.lengte });
+  const schaal = actief.length ? schaalFactor(actief.map(monster)) : (versie?.scale_factor ?? 1);
+  const afwijkend = actief.filter(x => !x.m.isDeviationConfirmed && afwijking(monster(x), schaal) > TOEGESTANE_AFWIJKING);
+  const lijnMeting = lijn ? metingen.find(m => zelfdeLijn(lijn, m.start, m.end)) : undefined;
+  const totaal = delen.filter(d => d.kind === 'roof').reduce((t, d) => t + oppervlakte(d, schaal, tekening?.dakvlakken ?? []), 0);
+
+  function kiesLijn(l: Lijn) {
+    setLijn(l); setMaatFout(null); setOpslaan(null);
+    const m = metingen.find(x => zelfdeLijn(l, x.start, x.end));
+    setMaat(m ? String(m.lengthMeters).replace('.', ',') : '');
+  }
+  function maatZetten() {
+    if (!lijn) return;
+    const g = leesGetal(maat);
+    const f = controleerMaat(g, lijn.lengte);
+    if (f) { setMaatFout(f); return; }
+    const oud = metingen.find(x => zelfdeLijn(lijn, x.start, x.end));
+    setMetingen([...metingen.filter(x => x !== oud),
+      { start: lijn.start, end: lijn.end, lengthMeters: g!, measuredAt: oud?.measuredAt ?? new Date().toISOString(), isDeviationConfirmed: false }]);
+    setGewijzigd(true); setLijn(null); setMaat(''); setMaatFout(null);
+  }
+  function maatWissen() {
+    if (!lijn) return;
+    setMetingen(metingen.filter(x => !zelfdeLijn(lijn, x.start, x.end)));
+    setGewijzigd(true); setLijn(null); setMaat('');
+  }
+  function bevestig(m: MeetLijn) {
+    setMetingen(metingen.map(x => x === m ? { ...x, isDeviationConfirmed: true } : x));
+    setGewijzigd(true);
+  }
+  async function tekeningOpslaan() {
+    if (!bedrijf || !b || !tekening?.detectie || !versie) return;
+    setOpslaan('bezig'); setFout(null);
+    try {
+      const detectie = { ...tekening.detectie, measuredEdges: metingen };
+      await bewaarTekening(bedrijf.tenant_id, b.id, {
+        source_type: versie.source_type === 'measured' ? 'measured' : metingen.length || detectie.isEdited ? 'corrected' : versie.source_type,
+        source_app: 'measure_web',
+        bag_pand_id: versie.bag_pand_id ?? detectie.pandID ?? null,
+        detection_json: detectie,
+        original_detection_json: tekening.origineel ?? null,
+        roof_planes_json: tekening.dakvlakken,
+        scale_factor: schaal,
+        total_area_m2: totaal,
+        client_created_at: new Date().toISOString(),
+      });
+      setOpslaan('klaar'); setHerladen(h => h + 1);
+    } catch (e) { setFout((e as Error).message); setOpslaan(null); }
+  }
 
   return (
     <IonPage>
@@ -111,21 +185,71 @@ export default function Gebouw() {
                   <>
                     <div className="r360-tekening-kader">
                       {!tekening ? <div className="r360-midden"><IonSpinner name="crescent" /></div>
-                        : tekening.detectie ? <DakTekening detectie={tekening.detectie} schaal={schaal} dakvlakken={tekening.dakvlakken} />
+                        : tekening.detectie ? <DakTekening detectie={tekening.detectie} schaal={schaal} dakvlakken={tekening.dakvlakken}
+                            metingen={metingen} gekozen={lijn} onKiesLijn={kiesLijn} waarschuwing={afwijkend.map(x => x.m)} />
                         : <p className="r360-leeg">Deze versie heeft geen tekening om te tonen.</p>}
                     </div>
+                    {tekening?.detectie && delen.length > 0 && (
+                      <>
+                        <p className="r360-uitleg">
+                          {lijn ? 'Vul de echte lengte van de blauwe lijn in.' : 'Tik op een lijn in de tekening en vul de echte maat in. Alle andere lijnen en oppervlaktes schalen dan mee.'}
+                        </p>
+                        {lijn && (
+                          <IonList inset>
+                            <IonItem>
+                              <IonLabel>Volgens de tekening</IonLabel>
+                              <IonNote slot="end">{(lijn.lengte * schaal).toLocaleString('nl-NL', { maximumFractionDigits: 2 })} m</IonNote>
+                            </IonItem>
+                            <IonItem>
+                              <IonInput label="Echte maat (m)" type="text" inputmode="decimal" value={maat} autofocus
+                                onIonInput={e => setMaat(String(e.detail.value ?? ''))}
+                                onKeyDown={e => e.key === 'Enter' && maatZetten()} />
+                              <IonButton slot="end" size="small" onClick={maatZetten} disabled={!maat}>Klaar</IonButton>
+                            </IonItem>
+                            {maatFout && <IonItem><IonText color="danger" className="r360-small">{maatFout}</IonText></IonItem>}
+                            <IonItem>
+                              {lijnMeting && <IonButton fill="clear" color="danger" size="small" onClick={maatWissen}>Maat wissen</IonButton>}
+                              <IonButton slot="end" fill="clear" size="small" onClick={() => { setLijn(null); setMaatFout(null); }}>Annuleren</IonButton>
+                            </IonItem>
+                          </IonList>
+                        )}
+                        <IonList inset>
+                          <IonItem>
+                            <IonLabel>Schaal</IonLabel>
+                            <IonNote slot="end">{actief.length === 0 ? 'Nog geen maat ingevuld'
+                              : `${schaal.toLocaleString('nl-NL', { maximumFractionDigits: 4 })} · uit ${actief.length} ${actief.length === 1 ? 'maat' : 'maten'}`}</IonNote>
+                          </IonItem>
+                          {afwijkend.map(x => (
+                            <IonItem key={x.m.start.x + ',' + x.m.start.y}>
+                              <IonLabel className="ion-text-wrap">
+                                <IonText className="r360-waarschuwing"><p>Deze maat ({x.m.lengthMeters.toLocaleString('nl-NL')} m) wijkt {procent(afwijking(monster(x), schaal))} af van de schaal
+                                  (verwacht {(x.l.lengte * schaal).toLocaleString('nl-NL', { maximumFractionDigits: 2 })} m). Controleer de lijn en de maat.</p></IonText>
+                              </IonLabel>
+                              <IonButton slot="end" size="small" fill="outline" onClick={() => bevestig(x.m)}>Klopt</IonButton>
+                            </IonItem>
+                          ))}
+                        </IonList>
+                        {(gewijzigd || opslaan === 'klaar') && (
+                          <div className="r360-form__actions">
+                            <IonButton expand="block" onClick={tekeningOpslaan} disabled={!gewijzigd || opslaan === 'bezig'}>
+                              {opslaan === 'bezig' ? <IonSpinner name="crescent" /> : gewijzigd ? 'Maten opslaan (nieuwe versie)' : 'Opgeslagen ✓'}
+                            </IonButton>
+                          </div>
+                        )}
+                      </>
+                    )}
                     {tekening?.detectie?.parts && (
                       <IonList inset>
                         {tekening.detectie.parts.map(d => (
                           <IonItem key={`${d.kind}-${d.number}`}>
-                            <IonLabel>{d.customName?.trim() || (d.kind === 'roof' ? `Dak ${d.number}` : `Luifel ${d.number}`)}</IonLabel>
+                            <IonLabel>{naam(d)}</IonLabel>
                             <IonNote slot="end">{Math.round(oppervlakte(d, schaal, tekening.dakvlakken))} m²</IonNote>
                           </IonItem>
                         ))}
-                        {versie?.total_area_m2 != null && (
+                        {(versie?.total_area_m2 != null || totaal > 0) && (
                           <IonItem>
                             <IonLabel className="r360-row-title">Totaal daken</IonLabel>
-                            <IonNote slot="end" className="r360-row-title">{Math.round(versie.total_area_m2)} m²</IonNote>
+                            <IonNote slot="end" className="r360-row-title">{Math.round(gewijzigd ? totaal : versie?.total_area_m2 ?? totaal)} m²</IonNote>
                           </IonItem>
                         )}
                       </IonList>
