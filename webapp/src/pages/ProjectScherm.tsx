@@ -5,6 +5,9 @@ import {
   IonTextarea, IonTitle, IonToolbar,
 } from '@ionic/react';
 import { useEffect, useState } from 'react';
+import { useIonViewWillEnter } from '@ionic/react';
+import { dakvlakVoorDeel, deelId, laadGebouwTekening, randenVoorDeel, type GebouwTekening } from '../tekenwerk';
+import { naam } from '../components/DakTekening';
 import { useHistory, useParams } from 'react-router-dom';
 import {
   bewaar, haalAlgemeneOpname, haalDakvlakken, dakvlakTypes, label, type Dakvlak, haalProject, haalProjectRelaties, haalRelatie, keuzes, nieuweId,
@@ -37,6 +40,10 @@ export default function ProjectScherm() {
   const [melding, setMelding] = useState<string | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const [dakvlakken, setDakvlakken] = useState<Dakvlak[]>([]);
+  const [gebouw, setGebouw] = useState<GebouwTekening | null>(null);
+  const [overname, setOvername] = useState<string | null>(null);
+  // Terug van een dakvlak: lijst opnieuw ophalen, zodat nieuwe maten en codes kloppen.
+  useIonViewWillEnter(() => { haalDakvlakken(id).then(setDakvlakken).catch(() => undefined); });
   const history = useHistory();
 
   useEffect(() => {
@@ -50,6 +57,7 @@ export default function ProjectScherm() {
         const og = client ? await haalRelatie(client.party_id) : null;
         if (!actief) return;
         setProject(p); setOpdrachtgever(og); setOpgeslagen(o);
+        if (p?.building_id) laadGebouwTekening(bedrijf.tenant_id, p.building_id).then(g => actief && setGebouw(g)).catch(() => setGebouw(null));
         if (o) { const { version: _v, deleted_at: _d, project_id: _p, id: _i, ...rest } = o; setOpname({ ...leeg, ...rest }); }
       } catch (e) { if (actief) setFout((e as Error).message); }
     })();
@@ -90,6 +98,49 @@ export default function ProjectScherm() {
       history.push(`/projecten/${project.id}/dakvlakken/${nieuw.id}`);
     } catch (e) { setFout((e as Error).message); }
     finally { setBezig(false); }
+  }
+
+  // Overnemen in opname (zoals de iOS-app): elk dakdeel van de tekening wordt een dakvlak.
+  // Dak N krijgt DV-0N als die code vrij is (of als dat dakvlak nog leeg is); delen die al
+  // in een dakvlak zitten worden overgeslagen. Ingemeten dakvlakken worden nooit veranderd.
+  const teOvernemen = gebouw ? (gebouw.tekening.detectie?.parts ?? [])
+    .filter(d => !dakvlakken.some(v => v.detected_part_id === deelId(d)))
+    .sort((a, b) => (a.kind === b.kind ? a.number - b.number : a.kind === 'roof' ? -1 : 1)) : [];
+  async function overnemenInOpname() {
+    if (!bedrijf || !project || !gebouw || teOvernemen.length === 0) return;
+    setBezig(true); setFout(null); setOvername(null);
+    const t = bedrijf.tenant_id;
+    const lijst = [...dakvlakken];
+    const code2 = (n: number) => `DV-${String(n).padStart(2, '0')}`;
+    const leeg = (v: Dakvlak) => !v.measurement_method && v.calculated_area_m2 == null && v.contour_status !== 'closed';
+    const gedaan: string[] = [];
+    try {
+      for (const d of teOvernemen) {
+        const wens = d.kind === 'roof' ? code2(d.number) : null;
+        const bestaand = wens ? lijst.find(v => v.code === wens) : undefined;
+        let vlak: Dakvlak;
+        if (bestaand && leeg(bestaand)) {
+          vlak = await bewaar<Dakvlak>(t, 'roof_planes', { id: bestaand.id, ...dakvlakVoorDeel(d, gebouw),
+            plane_type: d.kind === 'canopy' ? 'canopy' : bestaand.plane_type }, bestaand.version);
+          lijst.splice(lijst.indexOf(bestaand), 1, vlak);
+        } else {
+          const volg = Math.max(0, ...lijst.map(v => v.sequence_number)) + 1;
+          let code = wens && !bestaand ? wens : code2(volg);
+          for (let n = volg; lijst.some(v => v.code === code); n++) code = code2(n + 1);
+          vlak = await bewaar<Dakvlak>(t, 'roof_planes', { id: nieuweId(), project_id: project.id, sequence_number: volg, code,
+            plane_type: d.kind === 'canopy' ? 'canopy' : d.number === 1 ? 'main_roof' : 'unknown', ...dakvlakVoorDeel(d, gebouw) });
+          lijst.push(vlak);
+        }
+        for (const r of randenVoorDeel(d, gebouw, vlak.id)) await bewaar(t, 'roof_edges', r);
+        gedaan.push(`${naam(d)} → ${vlak.code}`);
+      }
+      setOvername(`Overgenomen: ${gedaan.join(', ')}.`);
+    } catch (e) {
+      setFout((e as Error).message + (gedaan.length ? ` (wel gelukt: ${gedaan.join(', ')})` : ''));
+    } finally {
+      setDakvlakken(await haalDakvlakken(project.id).catch(() => lijst));
+      setBezig(false);
+    }
   }
 
   const kies = (veld: keyof Opname, lijst: readonly (readonly [string, string])[], titel: string) => (
@@ -163,9 +214,18 @@ export default function ProjectScherm() {
                     ))}
                   </IonList>
                 )}
-                <div className="r360-form__actions">
+                <div className="r360-form__actions r360-knoppen">
+                  {gebouw && teOvernemen.length > 0 && (
+                    <IonButton expand="block" onClick={overnemenInOpname} disabled={bezig}>
+                      Overnemen in opname ({teOvernemen.length} {teOvernemen.length === 1 ? 'dakdeel' : 'dakdelen'})</IonButton>
+                  )}
                   <IonButton expand="block" fill="outline" onClick={dakvlakToevoegen} disabled={bezig}>Dakvlak toevoegen</IonButton>
                 </div>
+                {overname && <p className="r360-uitleg r360-kwaliteit--goed">{overname}</p>}
+                {gebouw && teOvernemen.length > 0 && (
+                  <p className="r360-uitleg">Overnemen maakt van elk dakdeel uit de gebouwtekening dat nog niet in de opname zit een dakvlak:
+                    Dak 1 wordt DV-01, Dak 2 wordt DV-02, enzovoort. Nog over: {teOvernemen.map(naam).join(', ')}.</p>
+                )}
 
                 <div className="r360-section">Algemene opname</div>
                 <IonList inset>

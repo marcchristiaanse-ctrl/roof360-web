@@ -34,9 +34,11 @@ export function lijnen(delen: DakDeel[]): Lijn[] {
   return uit;
 }
 
-export function DakTekening({ detectie, schaal, dakvlakken, metingen = [], gekozen, onKiesLijn, waarschuwing = [] }: {
+export function DakTekening({ detectie, schaal, dakvlakken, metingen = [], gekozen, onKiesLijn, waarschuwing = [], onKiesDeel, gebruikt = [], onTik, tekenPunten }: {
   detectie: Detectie; schaal: number; dakvlakken: DakvlakSamenvatting[];
   metingen?: MeetLijn[]; gekozen?: Lijn | null; onKiesLijn?: (l: Lijn) => void; waarschuwing?: MeetLijn[];
+  onKiesDeel?: (d: DakDeel) => void; gebruikt?: string[]; // delen aantikken; gebruikt = al overgenomen (grijs)
+  onTik?: (p: RDPunt) => void; tekenPunten?: RDPunt[];   // zelf tekenen: tik = hoekpunt (springt naar hoeken en lijnen)
 }) {
   const delen = (detectie.parts ?? []).filter(d => d.rings?.[0]?.length >= 3);
   if (delen.length === 0) return <p className="r360-leeg">Deze tekening heeft geen dakdelen.</p>;
@@ -56,12 +58,35 @@ export function DakTekening({ detectie, schaal, dakvlakken, metingen = [], gekoz
   const alleLijnen = onKiesLijn || metingen.length ? lijnen(delen) : [];
   const meting = (l: Lijn) => metingen.find(m => zelfdeLijn(l, m.start, m.end));
 
+  // Zelf tekenen: tikpositie omrekenen naar RD en laten 'springen' naar een hoek of lijn in de buurt.
+  function tik(e: React.MouseEvent<SVGSVGElement>) {
+    if (!onTik) return;
+    const svg = e.currentTarget, m = svg.getScreenCTM();
+    if (!m) return;
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse());
+    const p = { x: pt.x + minX - rand, y: maxY + rand - pt.y };
+    const marge = letter * 0.6;
+    const hoeken = [...punten, ...(tekenPunten ?? [])];
+    const hoek = hoeken.reduce<RDPunt | null>((best, q) => afst(q, p) < marge && (!best || afst(q, p) < afst(best, p)) ? q : best, null);
+    if (hoek) { onTik({ ...hoek }); return; }
+    let beste: RDPunt | null = null;
+    for (const l of lijnen(delen)) {
+      const dx = l.end.x - l.start.x, dy = l.end.y - l.start.y, len2 = dx * dx + dy * dy;
+      const t = Math.max(0, Math.min(1, ((p.x - l.start.x) * dx + (p.y - l.start.y) * dy) / len2));
+      const q = { x: l.start.x + t * dx, y: l.start.y + t * dy };
+      if (afst(q, p) < marge && (!beste || afst(q, p) < afst(beste, p))) beste = q;
+    }
+    onTik(beste ?? p);
+  }
+  const tp = tekenPunten ?? [];
+
   return (
-    <svg className="r360-tekening" viewBox={`0 0 ${breedte} ${hoogte}`} role="img" aria-label="Daktekening">
+    <svg className="r360-tekening" viewBox={`0 0 ${breedte} ${hoogte}`} role="img" aria-label="Daktekening"
+      onClick={onTik ? tik : undefined} style={onTik ? { cursor: 'crosshair', touchAction: 'manipulation' } : undefined}>
       {delen.map(d => (
         <path key={`${d.kind}-${d.number}`} d={pad(d)} fillRule="evenodd"
-          className={d.kind === 'roof' ? 'r360-tekening__dak' : 'r360-tekening__luifel'}
-          strokeWidth={letter / 8} />
+          className={gebruikt.includes(`${d.kind}-${d.number}`) ? 'r360-tekening__ander' : d.kind === 'roof' ? 'r360-tekening__dak' : 'r360-tekening__luifel'}
+          strokeWidth={letter / 8} onClick={onKiesDeel ? () => onKiesDeel(d) : undefined} style={onKiesDeel ? { cursor: 'pointer' } : undefined} />
       ))}
       {alleLijnen.map((l, i) => {
         const m = meting(l);
@@ -92,6 +117,13 @@ export function DakTekening({ detectie, schaal, dakvlakken, metingen = [], gekoz
           </text>
         </g>
       ))}
+      {tp.length > 0 && (
+        <g pointerEvents="none">
+          {tp.length >= 3 && <path d={'M' + tp.map(p => `${sx(p.x).toFixed(2)},${sy(p.y).toFixed(2)}`).join('L') + 'Z'} className="r360-tekening__nieuw" strokeWidth={0} />}
+          <path d={'M' + tp.map(p => `${sx(p.x).toFixed(2)},${sy(p.y).toFixed(2)}`).join('L')} fill="none" className="r360-lijn--gekozen" strokeWidth={letter / 4} strokeLinejoin="round" />
+          {tp.map((p, i) => <circle key={i} cx={sx(p.x)} cy={sy(p.y)} r={letter / (i === tp.length - 1 ? 2.5 : 3.5)} className="r360-tekening__punt" />)}
+        </g>
+      )}
     </svg>
   );
 }
