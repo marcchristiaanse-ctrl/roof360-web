@@ -1,8 +1,10 @@
 // Roof360 Service: overzicht voor kantoor en monteur. Drie tabs: inbox, meldingen, werkbonnen.
 import {
   IonBackButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel, IonList, IonNote, IonPage,
-  IonSegment, IonSegmentButton, IonSpinner, IonTitle, IonToolbar, useIonViewWillEnter,
+  IonSegment, IonSegmentButton, IonSpinner, IonTitle, IonToolbar, useIonViewWillEnter, IonButton, IonIcon,
 } from '@ionic/react';
+import { add } from 'ionicons/icons';
+import { useWachtrij } from './opslaan';
 import { useCallback, useEffect, useState } from 'react';
 import { adresRegel } from '../../gegevens';
 import { useBedrijf } from '../../useBedrijf';
@@ -36,6 +38,7 @@ export default function ServiceOverzicht() {
   useEffect(ophalen, [ophalen]);
   useIonViewWillEnter(ophalen, [ophalen]);
 
+  const wachtrij = useWachtrij();
   const open = sorteerOpUrgentie((meldingen ?? []).filter(isOpen));
   const openWerkbonnen = (werkbonnen ?? []).filter(w => !['completed', 'invoiced', 'cancelled'].includes(w.status));
 
@@ -45,6 +48,11 @@ export default function ServiceOverzicht() {
         <IonToolbar>
           <IonButtons slot="start"><IonBackButton defaultHref="/" text="Start" /></IonButtons>
           <IonTitle>Calamiteiten</IonTitle>
+          {bedrijf && (
+            <IonButtons slot="end">
+              <IonButton routerLink="/calamiteiten/nieuwe-melding" aria-label="Nieuwe melding"><IonIcon icon={add} /></IonButton>
+            </IonButtons>
+          )}
         </IonToolbar>
         <IonToolbar>
           <IonSegment value={tab} onIonChange={e => setTab(e.detail.value as Tab)}>
@@ -56,6 +64,7 @@ export default function ServiceOverzicht() {
       </IonHeader>
       <IonContent fullscreen className="r360-form">
         <div className="r360-form__body">
+          <WachtrijBalk {...wachtrij} />
           {laden ? <div className="r360-midden"><IonSpinner name="crescent" /></div>
             : !sessie ? <NietIngelogd />
             : bedrijfFout ? <Melding tekst={bedrijfFout} />
@@ -75,10 +84,10 @@ function InboxLijst({ lijst }: { lijst: InboxBericht[] }) {
   if (lijst.length === 0) return <Melding tekst="Geen nieuwe berichten. Meldingen per mail, WhatsApp, formulier of koppeling komen hier binnen." />;
   return (
     <>
-      <div className="r360-section">Nog te verwerken · {lijst.length}</div>
+      <div className="r360-section">Nog te verwerken · {lijst.length} · tik om er een melding van te maken</div>
       <IonList inset>
         {lijst.map(b => (
-          <IonItem key={b.id}>
+          <IonItem key={b.id} button detail routerLink={`/calamiteiten/nieuwe-melding?bericht=${b.id}`}>
             <IonLabel>
               <h2 className="r360-row-title">{b.subject || b.sender_name || b.sender_email || b.sender_phone || 'Bericht'}</h2>
               <p>{[b.sender_name, b.sender_email, b.sender_phone].filter(Boolean).join(' · ')}</p>
@@ -132,5 +141,16 @@ export function WerkbonnenLijst({ lijst }: { lijst: Werkbon[] }) {
         ))}
       </IonList>
     </>
+  );
+}
+
+export function WachtrijBalk({ aantal, online, fouten }: { aantal: number; online: boolean; fouten: string[] }) {
+  if (online && aantal === 0 && fouten.length === 0) return null;
+  return (
+    <IonList inset>
+      {!online && <IonItem><IonLabel className="ion-text-wrap">Geen internet. Je kunt doorwerken; wijzigingen worden verstuurd zodra er weer verbinding is.</IonLabel></IonItem>}
+      {aantal > 0 && <IonItem><IonLabel className="ion-text-wrap">{aantal} wijziging{aantal === 1 ? '' : 'en'} wacht{aantal === 1 ? '' : 'en'} op verzending.</IonLabel></IonItem>}
+      {fouten.map((f, i) => <IonItem key={i}><IonLabel color="danger" className="ion-text-wrap">Niet verstuurd: {f}</IonLabel></IonItem>)}
+    </IonList>
   );
 }
