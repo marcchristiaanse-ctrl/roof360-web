@@ -234,22 +234,58 @@ export default function DakvlakScherm() {
     if (methode === 'manual') {
       const deel = gebouw?.tekening.detectie?.parts?.find(d => `${d.kind}-${d.number}` === dakvlak?.detected_part_id);
       const ring = deel?.rings[0] ?? [];
+      // bag_reference_edge_id = "deel:i" of na samenvoegen "deel:i-j" (lijnen i t/m j van de ring)
       return randen.flatMap(r => {
-        const i = Number(r.bag_reference_edge_id?.split(':')[1]);
-        return r.measurement_source === 'bag_reference' && ring[i] ? [{ rand: r, a: ring[i], b: ring[(i + 1) % ring.length] }] : [];
+        const [i, j = i] = (r.bag_reference_edge_id?.split(':')[1] ?? '').split('-').map(Number);
+        if (r.measurement_source !== 'bag_reference' || !ring[i] || !ring[j]) return [];
+        return [{ rand: r, pts: boog(ring, i, j) }];
       });
     }
     if (punten.length === 0) return [];
-    const xy = (pid: string | null) => { const p = punten.find(q => q.id === pid); return p ? lokaal(p, punten[0]) : null; };
-    return randen.flatMap(r => { const a = xy(r.start_point_id), b = xy(r.end_point_id); return a && b ? [{ rand: r, a, b }] : []; });
+    const xy = punten.map(p => lokaal(p, punten[0]));
+    return randen.flatMap(r => {
+      const i = punten.findIndex(q => q.id === r.start_point_id), e = punten.findIndex(q => q.id === r.end_point_id);
+      return i >= 0 && e >= 0 ? [{ rand: r, pts: boog(xy, i, (e - 1 + xy.length) % xy.length) }] : [];
+    });
   })();
+
+  // Samenvoegen: rand r met de volgende randen t/m "tot" wordt één rand (bijvoorbeeld een ronde hoek).
+  const [samenTot, setSamenTot] = useState<string>('');
+  const volgende = (r: Dakrand) => {
+    const rij = randen.filter(schaalbaar).sort((a, b) => a.sequence_number - b.sequence_number);
+    const i = rij.findIndex(x => x.id === r.id);
+    const rest = rij.slice(i + 1);
+    return i === 0 ? rest.slice(0, -1) : rest; // nooit alle randen samen
+  };
+  const samenvoegen = (r: Dakrand) => doe('samen-' + r.id, async () => {
+    const rij = randen.filter(schaalbaar).sort((a, b) => a.sequence_number - b.sequence_number);
+    const van = rij.findIndex(x => x.id === r.id), tot = rij.findIndex(x => x.id === samenTot);
+    if (van < 0 || tot <= van) throw new Error('Kies tot en met welke rand je wilt samenvoegen.');
+    const weg = rij.slice(van + 1, tot + 1), laatste = rij[tot];
+    // nieuwe codes: alle randen opnieuw doornummeren (R1, R2, ...)
+    const blijft = randen.filter(x => !weg.some(w => w.id === x.id)).sort((a, b) => a.sequence_number - b.sequence_number);
+    const code = (x: Dakrand) => `R${blijft.findIndex(y => y.id === x.id) + 1}`;
+    const eerste = r.bag_reference_edge_id?.split(':');
+    const laatsteIndex = laatste.bag_reference_edge_id?.split(':')[1]?.split('-').pop();
+    await bewaar(t, 'roof_edges', {
+      id: r.id, code: code(r), length_m: Math.round([r, ...weg].reduce((som, x) => som + x.length_m, 0) * 1000) / 1000,
+      checked_length_m: null, deviation_confirmed: false,
+      ...(r.measurement_source === 'bag_reference' && eerste
+        ? { bag_reference_edge_id: `${eerste[0]}:${eerste[1].split('-')[0]}-${laatsteIndex}` }
+        : { end_point_id: laatste.end_point_id }),
+    }, r.version);
+    for (const x of weg) await verwijder(t, 'roof_edges', x.id, x.version);
+    for (const x of blijft) if (x.id !== r.id && x.code !== code(x)) await bewaar(t, 'roof_edges', { id: x.id, code: code(x) }, x.version);
+    await schaalBewaren(blijft.map(x => x.id === r.id ? { ...x, checked_length_m: null } : x));
+    setBewerkRand(null); setSamenTot('');
+  });
   const [vanaf, setVanaf] = useState<'tekening' | 'lijst'>('lijst');
   const kiesRand = (r: Dakrand, waar: 'tekening' | 'lijst' = 'lijst') => {
     setVanaf(waar);
-    setBewerkRand(bewerkRand === r.id && vanaf === waar ? null : r.id);
+    setBewerkRand(bewerkRand === r.id && vanaf === waar ? null : r.id); setSamenTot('');
     setRandMaat(r.checked_length_m != null ? String(r.checked_length_m).replace('.', ',') : '');
   };
-  const maatInvoer = (r: Dakrand) => (
+  const maatInvoer = (r: Dakrand) => (<>
     <IonItem>
       <IonInput label={`Meetlintmaat ${r.code} (m)`} type="text" inputmode="decimal" value={randMaat}
         onIonInput={e => setRandMaat(String(e.detail.value ?? ''))}
@@ -258,7 +294,17 @@ export default function DakvlakScherm() {
       <IonButton slot="end" size="small" disabled={!randMaat || !!bezig} onClick={() => randMaatZetten(r)}>
         {bezig === 'maat-' + r.id ? <IonSpinner name="crescent" /> : 'Bewaar'}</IonButton>
     </IonItem>
-  );
+    {volgende(r).length > 0 && (
+      <IonItem>
+        <IonSelect label={`${r.code} samenvoegen t/m`} interface="action-sheet" value={samenTot} placeholder="kies rand"
+          onIonChange={e => setSamenTot(String(e.detail.value ?? ''))}>
+          {volgende(r).map(x => <IonSelectOption key={x.id} value={x.id}>{x.code}</IonSelectOption>)}
+        </IonSelect>
+        <IonButton slot="end" size="small" fill="outline" disabled={!samenTot || !!bezig} onClick={() => samenvoegen(r)}>
+          {bezig === 'samen-' + r.id ? <IonSpinner name="crescent" /> : 'Samenvoegen'}</IonButton>
+      </IonItem>
+    )}
+  </>);
   const gekozenRand = randen.find(r => r.id === bewerkRand);
   const randenTekening = segmenten.length > 0 && (
     <>
@@ -548,7 +594,13 @@ function Schets({ punten, gesloten }: { punten: Meetpunt[]; gesloten: boolean })
 }
 
 // Tekening van het dakvlak waarin je de randen kunt aantikken (noorden boven, maten in meters).
-type Segment = { rand: Dakrand; a: { x: number; y: number }; b: { x: number; y: number } };
+type Segment = { rand: Dakrand; pts: { x: number; y: number }[] };
+// Punten i t/m j+1 van een gesloten ring (lijnen i t/m j), ook over het begin heen.
+function boog<P>(ring: P[], i: number, j: number): P[] {
+  const uit = [ring[i]];
+  for (let k = i; ; k = (k + 1) % ring.length) { uit.push(ring[(k + 1) % ring.length]); if (k === j || uit.length > ring.length) break; }
+  return uit;
+}
 type Punt = { x: number; y: number };
 function RandenTekening({ segmenten, achtergrond = [], gekozen, onKies, tekst, klasse }: {
   segmenten: Segment[]; achtergrond?: { ringen: Punt[][]; naam: string; label: Punt }[];
@@ -556,7 +608,7 @@ function RandenTekening({ segmenten, achtergrond = [], gekozen, onKies, tekst, k
   tekst: (r: Dakrand) => string; klasse: (r: Dakrand) => 'gewoon' | 'gemeten' | 'afwijking';
 }) {
   // Andere dakdelen (bijvoorbeeld een opbouw op dit dak) grijs op de achtergrond, zodat de tekening sluit.
-  const alle = [...segmenten.flatMap(s => [s.a, s.b]), ...achtergrond.flatMap(d => d.ringen.flat())];
+  const alle = [...segmenten.flatMap(s => s.pts), ...achtergrond.flatMap(d => d.ringen.flat())];
   const xs = alle.map(p => p.x), ys = alle.map(p => p.y);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const rand = Math.max(maxX - minX, maxY - minY, 1) * 0.1;
@@ -564,9 +616,9 @@ function RandenTekening({ segmenten, achtergrond = [], gekozen, onKies, tekst, k
   const sx = (x: number) => x - minX + rand, sy = (y: number) => maxY - y + rand;
   const letter = Math.max(b, h) / 34;
   // midden van de vorm, om de maat aan de buitenkant van een rand te zetten
-  const eigen = segmenten.flatMap(s => [s.a]);
+  const eigen = segmenten.flatMap(s => s.pts.slice(0, -1));
   const mx = eigen.reduce((t, p) => t + p.x, 0) / eigen.length, my = eigen.reduce((t, p) => t + p.y, 0) / eigen.length;
-  const vlak = segmenten.map((s, i) => `${i ? 'L' : 'M'}${sx(s.a.x).toFixed(2)},${sy(s.a.y).toFixed(2)}`).join('') + 'Z';
+  const vlak = eigen.map((p, i) => `${i ? 'L' : 'M'}${sx(p.x).toFixed(2)},${sy(p.y).toFixed(2)}`).join('') + 'Z';
   return (
     <div className="r360-tekening-kader">
       <svg className="r360-tekening" viewBox={`0 0 ${b} ${h}`} role="img" aria-label="Dakvlak met randen">
@@ -578,17 +630,20 @@ function RandenTekening({ segmenten, achtergrond = [], gekozen, onKies, tekst, k
           </g>
         ))}
         <path d={vlak} className="r360-tekening__dak" strokeWidth={0} />
-        {segmenten.map(({ rand: r, a, b: e }) => {
+        {segmenten.map(({ rand: r, pts }) => {
           const k = gekozen === r.id ? 'r360-lijn--gekozen' : klasse(r) === 'afwijking' ? 'r360-lijn--afwijking'
             : klasse(r) === 'gemeten' ? 'r360-lijn--gemeten' : 'r360-lijn--rand';
+          const lijn = 'M' + pts.map(p => `${sx(p.x).toFixed(2)},${sy(p.y).toFixed(2)}`).join('L');
+          // maat bij het midden van de rand
+          const m = Math.floor((pts.length - 1) / 2), a = pts[m], e = pts[m + 1];
           const cx = (a.x + e.x) / 2, cy = (a.y + e.y) / 2;
           const d = Math.hypot(cx - mx, cy - my) || 1;
           const tx = cx + (cx - mx) / d * letter * 1.1, ty = cy + (cy - my) / d * letter * 1.1;
           return (
             <g key={r.id} onClick={() => onKies(r)} style={{ cursor: 'pointer' }}>
-              <line x1={sx(a.x)} y1={sy(a.y)} x2={sx(e.x)} y2={sy(e.y)} stroke="transparent" strokeWidth={letter * 1.6} />
-              <line x1={sx(a.x)} y1={sy(a.y)} x2={sx(e.x)} y2={sy(e.y)} className={k}
-                strokeWidth={letter / (gekozen === r.id ? 2.5 : 5)} strokeLinecap="round" />
+              <path d={lijn} fill="none" stroke="transparent" strokeWidth={letter * 1.6} />
+              <path d={lijn} fill="none" className={k}
+                strokeWidth={letter / (gekozen === r.id ? 2.5 : 5)} strokeLinecap="round" strokeLinejoin="round" />
               <text x={sx(tx)} y={sy(ty)} textAnchor="middle" dominantBaseline="middle" fontSize={letter * 0.7} className="r360-lijn__tekst">
                 {r.code} · {tekst(r)}
               </text>
