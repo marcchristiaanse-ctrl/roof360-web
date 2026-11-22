@@ -98,7 +98,7 @@ export default function Gebouwen() {
                       <IonItem key={l.id} button detail routerLink={l.building ? `/gebouwen/${l.building.id}` : undefined}>
                         <IonLabel>
                           <h2 className="r360-row-title">{gebouwTitel(l)}</h2>
-                          {l.local_display_name && <p>{adresRegel(l.building)}</p>}
+                          {l.local_display_name && l.local_display_name.trim() !== adresRegel(l.building).trim() && <p>{adresRegel(l.building)}</p>}
                           <p>{l.building?.roof360_building_id}</p>
                         </IonLabel>
                         <IonNote slot="end" className={v ? 'r360-heeft-tekening' : ''}>

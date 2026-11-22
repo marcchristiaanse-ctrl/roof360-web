@@ -1,7 +1,7 @@
 // Eén gebouw: adres, daktekening en de versies ervan. Alleen lezen.
 import {
   IonBackButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel, IonList, IonNote,
-  IonPage, IonSpinner, IonTitle, IonToolbar,
+  IonPage, IonSpinner, IonTitle, IonToolbar, IonButton,
 } from '@ionic/react';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
@@ -11,6 +11,8 @@ import {
   type DakvlakSamenvatting, type Detectie, type GebouwLink, type TekeningVersie,
 } from '../gegevens';
 import { useBedrijf } from '../useBedrijf';
+import { haalProjecten, type Project } from '../opslaan';
+import { datumKort } from './Projecten';
 import { Melding, NietIngelogd } from './Gebouwen';
 import './Account.css';
 import './Gebouwen.css';
@@ -26,6 +28,7 @@ export default function Gebouw() {
   const [gekozen, setGekozen] = useState<string | null>(null);
   const [tekening, setTekening] = useState<{ detectie: Detectie | null; dakvlakken: DakvlakSamenvatting[] } | null>(null);
   const [fout, setFout] = useState<string | null>(null);
+  const [projecten, setProjecten] = useState<Project[]>([]);
 
   useEffect(() => {
     if (!bedrijf) return;
@@ -36,6 +39,7 @@ export default function Gebouw() {
         if (!actief) return;
         setLink(l); setVersies(v); setGekozen(besteVersie(v)?.id ?? null);
       })
+      .then(() => haalProjecten(bedrijf.tenant_id, id).then(p => actief && setProjecten(p)).catch(() => setProjecten([])))
       .catch(e => actief && setFout(e.message));
     return () => { actief = false; };
   }, [bedrijf?.tenant_id, id]);
@@ -84,6 +88,21 @@ export default function Gebouw() {
                     </IonItem>
                   )}
                 </IonList>
+
+                <div className="r360-section">Projecten bij dit gebouw</div>
+                {projecten.length > 0 && (
+                  <IonList inset>
+                    {projecten.map(p => (
+                      <IonItem key={p.id} button detail routerLink={`/projecten/${p.id}`}>
+                        <IonLabel><h2 className="r360-row-title">{p.name}</h2><p>{p.organization_name_snapshot}</p></IonLabel>
+                        <IonNote slot="end">{datumKort(p.updated_at)}</IonNote>
+                      </IonItem>
+                    ))}
+                  </IonList>
+                )}
+                <div className="r360-form__actions">
+                  <IonButton expand="block" fill="outline" routerLink={`/nieuw-project?gebouw=${b.id}`}>Nieuw project bij dit gebouw</IonButton>
+                </div>
 
                 <div className="r360-section">Daktekening</div>
                 {versies.length === 0 ? (
