@@ -9,13 +9,14 @@ import Binnenkort from './pages/Binnenkort';
 import Account from './pages/Account';
 import Gebouwen from './pages/Gebouwen';
 import Gebouw from './pages/Gebouw';
+import Projecten from './pages/Projecten';
+import NieuwProject from './pages/NieuwProject';
+import ProjectScherm from './pages/ProjectScherm';
 
 // Altijd iPhone-stijl, ook op Android en Windows, zodat het overal hetzelfde voelt.
 setupIonicReact({ mode: 'ios' });
 
 const schermen = [
-  { pad: '/nieuw-project', titel: 'Nieuw project' },
-  { pad: '/projecten', titel: 'Projecten' },
   { pad: '/opdrachtgevers', titel: 'Opdrachtgevers' },
   { pad: '/snelle-fotos', titel: "Snelle foto's" },
   { pad: '/agenda', titel: 'Agenda' },
@@ -39,6 +40,9 @@ export default function App() {
           <Route exact path="/account" component={Account} />
           <Route exact path="/gebouwen" component={Gebouwen} />
           <Route exact path="/gebouwen/:id" component={Gebouw} />
+          <Route exact path="/projecten" component={Projecten} />
+          <Route exact path="/nieuw-project" component={NieuwProject} />
+          <Route exact path="/projecten/:id" component={ProjectScherm} />
           {schermen.map(s => (
             <Route key={s.pad} exact path={s.pad} render={() => <Binnenkort titel={s.titel} />} />
           ))}
