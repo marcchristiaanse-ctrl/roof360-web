@@ -5,12 +5,13 @@ import {
   IonTextarea, IonTitle, IonToolbar,
 } from '@ionic/react';
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useHistory, useParams } from 'react-router-dom';
 import {
-  bewaar, haalAlgemeneOpname, haalProject, haalProjectRelaties, haalRelatie, keuzes, nieuweId,
+  bewaar, haalAlgemeneOpname, haalDakvlakken, dakvlakTypes, label, type Dakvlak, haalProject, haalProjectRelaties, haalRelatie, keuzes, nieuweId,
   type AlgemeneOpname, type Project, type Relatie,
 } from '../opslaan';
 import { useBedrijf } from '../useBedrijf';
+import { GetalInvoer } from '../components/GetalInvoer';
 import { Melding, NietIngelogd } from './Gebouwen';
 import { datumKort } from './Projecten';
 import './Account.css';
@@ -35,6 +36,8 @@ export default function ProjectScherm() {
   const [bezig, setBezig] = useState(false);
   const [melding, setMelding] = useState<string | null>(null);
   const [fout, setFout] = useState<string | null>(null);
+  const [dakvlakken, setDakvlakken] = useState<Dakvlak[]>([]);
+  const history = useHistory();
 
   useEffect(() => {
     if (!bedrijf) return;
@@ -42,6 +45,7 @@ export default function ProjectScherm() {
     (async () => {
       try {
         const [p, rel, o] = await Promise.all([haalProject(id), haalProjectRelaties(id), haalAlgemeneOpname(id)]);
+        haalDakvlakken(id).then(d => actief && setDakvlakken(d)).catch(() => setDakvlakken([]));
         const client = rel.find(r => r.role === 'client');
         const og = client ? await haalRelatie(client.party_id) : null;
         if (!actief) return;
@@ -70,6 +74,20 @@ export default function ProjectScherm() {
         opgeslagen ? { id: opgeslagen.id, ...anders } : { id: nieuweId(), project_id: project.id, ...anders },
         opgeslagen?.version);
       setOpgeslagen(nieuw); setGewijzigd(false); setMelding('Opgeslagen');
+    } catch (e) { setFout((e as Error).message); }
+    finally { setBezig(false); }
+  }
+
+  async function dakvlakToevoegen() {
+    if (!bedrijf || !project) return;
+    setBezig(true); setFout(null);
+    try {
+      const volg = Math.max(0, ...dakvlakken.map(d => d.sequence_number)) + 1;
+      let code = `DV-${String(volg).padStart(2, '0')}`;
+      while (dakvlakken.some(d => d.code === code)) code += 'a';
+      const nieuw = await bewaar<Dakvlak>(bedrijf.tenant_id, 'roof_planes',
+        { id: nieuweId(), project_id: project.id, sequence_number: volg, code, plane_type: volg === 1 ? 'main_roof' : 'unknown' });
+      history.push(`/projecten/${project.id}/dakvlakken/${nieuw.id}`);
     } catch (e) { setFout((e as Error).message); }
     finally { setBezig(false); }
   }
@@ -131,6 +149,24 @@ export default function ProjectScherm() {
                   <IonItem><IonLabel>Aangemaakt</IonLabel><IonNote slot="end">{datumKort(project.created_at)}</IonNote></IonItem>
                 </IonList>
 
+                <div className="r360-section">Dakvlakken · {dakvlakken.length}</div>
+                {dakvlakken.length > 0 && (
+                  <IonList inset>
+                    {dakvlakken.map(d => (
+                      <IonItem key={d.id} button detail routerLink={`/projecten/${project.id}/dakvlakken/${d.id}`}>
+                        <IonLabel>
+                          <h2 className="r360-row-title">{d.code}</h2>
+                          <p>{label(dakvlakTypes, d.plane_type)}{d.contour_status === 'closed' ? ' · contour gesloten' : ''}</p>
+                        </IonLabel>
+                        <IonNote slot="end">{(d.manual_gross_area_m2 ?? d.calculated_area_m2) != null ? `${Math.round((d.manual_gross_area_m2 ?? d.calculated_area_m2)!)} m²` : ''}</IonNote>
+                      </IonItem>
+                    ))}
+                  </IonList>
+                )}
+                <div className="r360-form__actions">
+                  <IonButton expand="block" fill="outline" onClick={dakvlakToevoegen} disabled={bezig}>Dakvlak toevoegen</IonButton>
+                </div>
+
                 <div className="r360-section">Algemene opname</div>
                 <IonList inset>
                   {kies('status', keuzes.status, 'Status')}
@@ -169,10 +205,7 @@ export default function ProjectScherm() {
                   {jaNee('parking_costs', 'Parkeerkosten')}
                   {opname.parking_costs && (
                     <IonItem>
-                      <IonInput label="Kosten per dag (€)" labelPlacement="stacked" type="number" inputmode="decimal" min="0"
-                        value={opname.parking_cost_per_day ?? ''}
-                        onIonInput={e => { const v = String(e.detail.value ?? '').replace(',', '.');
-                          zet('parking_cost_per_day', v === '' || isNaN(Number(v)) ? null : Number(v)); }} />
+                      <GetalInvoer label="Kosten per dag (€)" waarde={opname.parking_cost_per_day} onWijzig={n => zet('parking_cost_per_day', n)} />
                     </IonItem>
                   )}
                 </IonList>
@@ -198,7 +231,7 @@ export default function ProjectScherm() {
                     {bezig ? <IonSpinner name="crescent" /> : melding && !gewijzigd ? 'Opgeslagen ✓' : 'Algemene opname opslaan'}
                   </IonButton>
                 </div>
-                <p className="r360-uitleg">Dakvlakken, details en foto's komen in een volgende stap.</p>
+                <p className="r360-uitleg">Details (HWA, lichtkoepels, dakranden) en foto's komen in een volgende stap.</p>
               </>
             )}
         </div>

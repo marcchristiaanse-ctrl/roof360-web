@@ -17,3 +17,16 @@
 .r360-tekening__maat { fill: rgba(60, 60, 67, 0.75); }
 .r360-paginakop { margin: 18px 36px 0; font-size: 22px; font-weight: 700; color: #0A1A2E; }
 .r360-janee { max-width: 140px; }
+.r360-tekening__open { fill: none; stroke: #0A1A2E; stroke-dasharray: 2 1; }
+.r360-tekening__punt { fill: #00BDEB; stroke: #0A1A2E; stroke-width: 0.1; }
+.r360-kwaliteit--goed { color: #1E8E3E; font-weight: 600; }
+.r360-kwaliteit--matig { color: #B26A00; font-weight: 600; }
+.r360-kwaliteit--slecht { color: #C5221F; font-weight: 600; }
+.r360-knoppen ion-button + ion-button { margin-top: 8px; }
+/* Lijnen op de tekening: aantikken om een echte maat in te vullen */
+.r360-lijn { stroke: rgba(10, 26, 46, 0.35); }
+.r360-lijn--gemeten { stroke: #1E8E3E; }
+.r360-lijn--afwijking { stroke: #B26A00; }
+.r360-lijn--gekozen { stroke: #00BDEB; }
+.r360-lijn__tekst { fill: #0A1A2E; font-weight: 700; paint-order: stroke; stroke: #FFFFFF; stroke-width: 0.25; }
+.r360-waarschuwing { color: #B26A00; }

@@ -1,4 +1,4 @@
-// Gegevens ophalen uit Supabase: ALLEEN LEZEN.
+// Gegevens ophalen uit Supabase: ALLEEN LEZEN. (Een tekening opslaan staat in opslaan.ts.)
 //
 // We gebruiken hier alleen gewone SELECT-opvragingen. Supabase laat via de RLS-regels
 // alleen zien wat bij jouw bedrijf (tenant) hoort. Er wordt niets opgeslagen of gewijzigd.
@@ -61,7 +61,10 @@ export type DakDeel = {
   labelPoint: RDPunt;
   customName?: string | null;
 };
-export type Detectie = { pandID?: string; parts?: DakDeel[] };
+// Een met de hand gemeten lijn op de tekening (zelfde vorm als MeasuredRoofEdge in de iOS-app).
+export type MeetLijn = { start: RDPunt; end: RDPunt; lengthMeters: number; measuredAt: string; isDeviationConfirmed?: boolean };
+// Overige velden van de iOS-app blijven ongewijzigd mee bewaard.
+export type Detectie = { pandID?: string; parts?: DakDeel[]; measuredEdges?: MeetLijn[]; isEdited?: boolean; [veld: string]: unknown };
 export type DakvlakSamenvatting = { code: string; source: string; detected_part_id?: string | null; area_m2?: number | null };
 
 export const bronNaam: Record<TekeningVersie['source_type'], string> = {
@@ -173,15 +176,17 @@ export async function haalVersies(tenantId: string, gebouwId?: string): Promise<
 }
 
 // De tekening zelf van één versie.
-export async function haalTekening(versieId: string): Promise<{ detectie: Detectie | null; dakvlakken: DakvlakSamenvatting[] }> {
+export type Tekening = { detectie: Detectie | null; dakvlakken: DakvlakSamenvatting[]; origineel: unknown };
+export async function haalTekening(versieId: string): Promise<Tekening> {
   const { data, error } = await supabase
     .from('roof_model_versions')
-    .select('detection_json, roof_planes_json')
+    .select('detection_json, roof_planes_json, original_detection_json')
     .eq('id', versieId)
     .maybeSingle();
   if (error) throw new Error(foutInHetNederlands(error));
   return {
     detectie: (data?.detection_json ?? null) as Detectie | null,
     dakvlakken: (data?.roof_planes_json ?? []) as DakvlakSamenvatting[],
+    origineel: data?.original_detection_json ?? null,
   };
 }

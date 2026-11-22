@@ -67,6 +67,20 @@ export async function verwijder(tenantId: string, tabel: string, id: string, ver
   if (error) throw new Error(vertaal(error));
 }
 
+// Een daktekening opslaan als nieuwe versie (bestaande functie save_roof_model_version, migratie 0005).
+// Er komt telkens een nieuwe versie bij; oude versies blijven bewaard.
+export async function bewaarTekening(tenantId: string, gebouwId: string, versie: Record<string, unknown>) {
+  const { data, error } = await supabase.rpc('save_roof_model_version', {
+    p_tenant_id: tenantId, p_mutation_id: nieuweId(), p_building_id: gebouwId, p_version: versie,
+  });
+  if (error) {
+    if (error.code === 'R3012') throw new Error('Je hebt vandaag te veel tekeningversies opgeslagen. Probeer het morgen weer.');
+    if (error.code === 'R3013') throw new Error('Deze tekening is te groot om op te slaan.');
+    throw new Error(vertaal(error));
+  }
+  return data;
+}
+
 async function lees<T>(vraag: PromiseLike<{ data: unknown; error: { message: string } | null }>): Promise<T> {
   const { data, error } = await vraag;
   if (error) throw new Error(vertaal(error));
@@ -105,3 +119,47 @@ export const keuzes = {
 } as const;
 export const label = (lijst: readonly (readonly [string, string])[], waarde: string | null | undefined) =>
   lijst.find(([w]) => w === waarde)?.[1] ?? '';
+
+// ---------------------------------------------------------------------
+// Dakvlakken, meetpunten en dakranden (migratie 0009)
+// ---------------------------------------------------------------------
+export type Dakvlak = {
+  id: string; project_id: string; sequence_number: number; code: string; plane_type: string;
+  other_type_description: string; free_description: string; contour_status: 'open' | 'closed';
+  has_slope: boolean | null; slope_type: string | null; calculated_area_m2: number | null;
+  manual_gross_area_m2: number | null; gross_area_source: string | null; measurement_status: string;
+  scale_factor: number | null; // uit de meetlintmaten (migratie 0010); null = 1
+  measurement_method: 'emlid' | 'manual' | null; detected_part_id: string | null; roof_model_version_id: string | null;
+  version: number; deleted_at: string | null; updated_at: string;
+};
+export type Meetpunt = {
+  id: string; roof_plane_id: string; sequence_number: number; point_code: string;
+  latitude: number; longitude: number; altitude: number | null; horizontal_accuracy: number;
+  vertical_accuracy: number | null; measured_at: string; distance_from_previous_point: number | null;
+  measurement_source: string | null; version: number; deleted_at: string | null;
+};
+export type Dakrand = {
+  id: string; roof_plane_id: string; sequence_number: number; code: string; length_m: number;
+  source: 'measured' | 'manual'; is_estimated: boolean; start_point_id: string | null; end_point_id: string | null;
+  checked_length_m: number | null; deviation_confirmed: boolean; // meetlintmaat (migratie 0010)
+  measurement_source: string | null; // core_location, reach_rx2_rtk, bag_reference (uit de tekening) of leeg (met de hand)
+  version: number; deleted_at: string | null;
+};
+export type Nulpunt = { id: string; project_id: string; origin_latitude: number; origin_longitude: number };
+
+export const haalDakvlakken = (projectId: string) =>
+  lees<Dakvlak[]>(supabase.from('roof_planes').select('*').eq('project_id', projectId).is('deleted_at', null).order('sequence_number'));
+export const haalDakvlak = (id: string) =>
+  lees<Dakvlak | null>(supabase.from('roof_planes').select('*').eq('id', id).is('deleted_at', null).maybeSingle());
+export const haalMeetpunten = (dakvlakId: string) =>
+  lees<Meetpunt[]>(supabase.from('measurement_points').select('*').eq('roof_plane_id', dakvlakId).is('deleted_at', null).order('sequence_number'));
+export const haalDakranden = (dakvlakId: string) =>
+  lees<Dakrand[]>(supabase.from('roof_edges').select('*').eq('roof_plane_id', dakvlakId).is('deleted_at', null).order('sequence_number'));
+export const haalNulpunt = (projectId: string) =>
+  lees<Nulpunt | null>(supabase.from('project_geometry_references').select('*').eq('project_id', projectId).is('deleted_at', null).maybeSingle());
+
+export const dakvlakTypes = [
+  ['main_roof', 'Hoofddak'], ['lower_roof', 'Lager dak'], ['technical_room', 'Technische ruimte'],
+  ['extension_roof', 'Aanbouw'], ['canopy', 'Luifel'], ['covered_area', 'Overkapping'], ['other', 'Anders'], ['unknown', 'Onbekend'],
+] as const;
+export const afschotTypes = [['single', 'Enkel'], ['double', 'Dubbel'], ['multiple', 'Meervoudig']] as const;
