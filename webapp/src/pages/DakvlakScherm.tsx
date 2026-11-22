@@ -9,7 +9,7 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  afschotTypes, bewaar, dakvlakTypes, haalDakranden, haalDakvlak, haalMeetpunten, haalNulpunt, haalProject, nieuweId, verwijder,
+  afschotTypes, bewaar, dakvlakTypes, haalDakranden, haalDakvlak, haalDakvlakken, haalMeetpunten, haalNulpunt, haalProject, nieuweId, verwijder, bewaarTekening,
   type Dakrand, type Dakvlak, type Meetpunt, type Nulpunt,
 } from '../opslaan';
 import { afstand, kwaliteit, lokaal, meter, oppervlakte } from '../meetkunde';
@@ -20,8 +20,9 @@ import { Melding, NietIngelogd } from './Gebouwen';
 import { besteVersie, haalTekening, haalVersies, type DakDeel, type Tekening, type TekeningVersie } from '../gegevens';
 import { DakTekening, lijnen, naam, oppervlakte as deelOppervlakte, zelfdeLijn } from '../components/DakTekening';
 import { RTK_NAUWKEURIGHEID, useLivePositie } from '../positie';
+import type { RDPunt } from '../gegevens';
+import { dakvlakVoorDeel, deelToevoegen, laadGebouwTekening, randenVoorDeel, versieGegevens, type GebouwTekening } from '../tekenwerk';
 
-type GebouwTekening = { versie: TekeningVersie; tekening: Tekening; schaal: number };
 import './Account.css';
 import './Gebouwen.css';
 
@@ -43,10 +44,14 @@ export default function DakvlakScherm() {
   const [randMaat, setRandMaat] = useState('');
   // Daktekening van het gebouw bij dit project (voor de handmatige meting). null = geen tekening.
   const [gebouw, setGebouw] = useState<GebouwTekening | null | undefined>(undefined);
+  // Andere dakvlakken van dit project: om te laten zien welk deel van de tekening al gebruikt is.
+  const [anderen, setAnderen] = useState<Dakvlak[]>([]);
 
   const ophalen = useCallback(async () => {
     try {
-      const [d, p, r, n] = await Promise.all([haalDakvlak(id), haalMeetpunten(id), haalDakranden(id), haalNulpunt(projectId)]);
+      const [d, p, r, n, a] = await Promise.all([haalDakvlak(id), haalMeetpunten(id), haalDakranden(id), haalNulpunt(projectId),
+        haalDakvlakken(projectId)]);
+      setAnderen(a.filter(x => x.id !== id));
       setDakvlak(d); setPunten(p); setRanden(r); setNulpunt(n);
       if (d) setVelden({ code: d.code, plane_type: d.plane_type, other_type_description: d.other_type_description,
         free_description: d.free_description, has_slope: d.has_slope, slope_type: d.slope_type, manual_gross_area_m2: d.manual_gross_area_m2 });
@@ -55,26 +60,17 @@ export default function DakvlakScherm() {
   }, [id, projectId]);
   useEffect(() => { if (bedrijf) ophalen(); }, [bedrijf?.tenant_id, ophalen]);
 
+  // Daktekening van het gebouw bij dit project laden (beste versie) met de schaal van het gebouw.
+  const laadGebouw = useCallback(async (tenantId: string): Promise<GebouwTekening | null> => {
+    const project = await haalProject(projectId);
+    return project?.building_id ? laadGebouwTekening(tenantId, project.building_id) : null;
+  }, [projectId]);
   useEffect(() => {
     if (!bedrijf) return;
     let aan = true;
-    (async () => {
-      const project = await haalProject(projectId);
-      if (!project?.building_id) return null;
-      const versie = besteVersie(await haalVersies(bedrijf.tenant_id, project.building_id));
-      if (!versie) return null;
-      const tekening = await haalTekening(versie.id);
-      if (!tekening.detectie?.parts?.length) return null;
-      // Schaal van het gebouw: uit de gemeten lijnen op de tekening, anders wat de versie zegt.
-      const alle = lijnen(tekening.detectie.parts);
-      const m = (tekening.detectie.measuredEdges ?? []).flatMap(e => {
-        const l = alle.find(x => zelfdeLijn(x, e.start, e.end));
-        return l ? [{ gemeten: e.lengthMeters, getekend: l.lengte }] : [];
-      });
-      return { versie, tekening, schaal: m.length ? schaalFactor(m) : versie.scale_factor ?? 1 };
-    })().then(g => aan && setGebouw(g)).catch(e => { console.warn('Tekening laden lukte niet', e); if (aan) setGebouw(null); });
+    laadGebouw(bedrijf.tenant_id).then(g => aan && setGebouw(g)).catch(e => { console.warn('Tekening laden lukte niet', e); if (aan) setGebouw(null); });
     return () => { aan = false; };
-  }, [bedrijf?.tenant_id, projectId]);
+  }, [bedrijf?.tenant_id, laadGebouw]);
 
   const t = bedrijf?.tenant_id ?? '';
   const zet = <K extends keyof Velden>(k: K, v: Velden[K]) => { setVelden(o => o && { ...o, [k]: v }); setGewijzigd(true); };
@@ -92,6 +88,8 @@ export default function DakvlakScherm() {
 
   // Meetwijze. Oudere dakvlakken met punten maar zonder meetwijze tellen als Emlid-meting.
   const methode = dakvlak?.measurement_method ?? (punten.length ? 'emlid' : null);
+  // Zelf tekenen: hoekpunten in RD, nog niet opgeslagen. null = niet aan het tekenen.
+  const [tekenen, setTekenen] = useState<RDPunt[] | null>(null);
   const gesloten = dakvlak?.contour_status === 'closed';
   // Live positie alleen aan tijdens het inmeten (scheelt batterij).
   const live = useLivePositie(methode === 'emlid' && !gesloten);
@@ -103,23 +101,12 @@ export default function DakvlakScherm() {
 
   // Handmatige meting: een deel van de daktekening overnemen als dakvlak. De randen krijgen de
   // lengte uit de tekening (op de schaal van het gebouw); met een meetlintmaat corrigeer je alles.
-  const neemOver = (deel: DakDeel) => doe('overnemen', async () => {
+  const neemOver = (deel: DakDeel) => doe('overnemen', () => overnemen(deel, gebouw));
+  async function overnemen(deel: DakDeel, gebouw: GebouwTekening | null | undefined) {
     if (!dakvlak || !gebouw) return;
-    const ring = deel.rings[0];
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i], b = ring[(i + 1) % ring.length];
-      const lengte = Math.hypot(a.x - b.x, a.y - b.y) * gebouw.schaal;
-      if (lengte < 0.01) continue;
-      await bewaar(t, 'roof_edges', { id: nieuweId(), roof_plane_id: dakvlak.id, sequence_number: i + 1, code: `R${i + 1}`,
-        length_m: Math.round(lengte * 1000) / 1000, source: 'manual', measurement_source: 'bag_reference',
-        source_description: `Uit daktekening versie ${gebouw.versie.version_number}`,
-        bag_reference_pand_id: gebouw.versie.bag_pand_id, bag_reference_edge_id: `${deel.kind}-${deel.number}:${i}` });
-    }
-    await bewaar(t, 'roof_planes', { id: dakvlak.id, measurement_method: 'manual', detected_part_id: `${deel.kind}-${deel.number}`,
-      roof_model_version_id: gebouw.versie.id, contour_status: 'closed', gross_area_source: 'geometry',
-      calculated_area_m2: Math.round(deelOppervlakte(deel, gebouw.schaal, []) * 100) / 100,
-      measurement_status: 'in_progress', scale_factor: null }, dakvlak.version);
-  });
+    for (const r of randenVoorDeel(deel, gebouw, dakvlak.id)) await bewaar(t, 'roof_edges', r);
+    await bewaar(t, 'roof_planes', { id: dakvlak.id, ...dakvlakVoorDeel(deel, gebouw) }, dakvlak.version);
+  }
 
   // Terug naar de keuze (kan alleen zolang er geen punten gemeten zijn).
   const meetwijzeWijzigen = () => doe('methode', async () => {
@@ -127,6 +114,22 @@ export default function DakvlakScherm() {
     for (const r of randen.filter(r => r.measurement_source === 'bag_reference')) await verwijder(t, 'roof_edges', r.id, r.version);
     await bewaar(t, 'roof_planes', { id: dakvlak.id, measurement_method: null, detected_part_id: null, roof_model_version_id: null,
       contour_status: 'open', calculated_area_m2: null, scale_factor: null }, dakvlak.version);
+  });
+
+  // Zelf tekenen, zoals de iOS-app: het getekende dakdeel komt in de daktekening van het gebouw
+  // (nieuwe tekeningversie) en dit dakvlak neemt het daarna over. Zo staat het voor iedereen in de tekening.
+  const tekeningOpslaan = () => doe('tekenen', async () => {
+    if (!dakvlak || !gebouw || !tekenen || !bedrijf) return;
+    const project = await haalProject(projectId);
+    if (!project?.building_id) throw new Error('Dit project hoort niet bij een gebouw.');
+    const { detectie, deel } = deelToevoegen(gebouw.tekening.detectie!, tekenen);
+    await bewaarTekening(t, project.building_id, versieGegevens(gebouw.versie, gebouw.tekening, detectie, gebouw.schaal));
+    const nieuw = await laadGebouw(bedrijf.tenant_id);
+    setGebouw(nieuw);
+    const zelfde = nieuw?.tekening.detectie?.parts?.find(d => d.kind === deel.kind && d.number === deel.number);
+    if (!zelfde) throw new Error('Het dakdeel is opgeslagen, maar niet teruggevonden. Kies het in de lijst.');
+    await overnemen(zelfde, nieuw);
+    setTekenen(null);
   });
 
   // Punt meten. Met de Emlid Reach via de iPhone komt hier de RTK-positie binnen.
@@ -205,7 +208,7 @@ export default function DakvlakScherm() {
   // Op schaal: randen uit de meetpunten met een meetlintmaat bepalen samen één schaal.
   // Alle gemeten randen x schaal, de oppervlakte x schaal x schaal. De GPS-punten blijven de bron.
   // Schaalbaar: randen uit de meetpunten of uit de tekening. Een met de hand ingevulde rand niet.
-  const schaalbaar = (r: Dakrand) => r.source === 'measured' || r.measurement_source === 'bag_reference';
+  const schaalbaar = (r: Dakrand) => r.source === 'measured' || r.measurement_source === 'bag_reference' || r.measurement_source === 'drawn';
   const monster = (r: Dakrand): Monster => ({ gemeten: r.checked_length_m!, getekend: r.length_m });
   const metMaat = randen.filter(r => schaalbaar(r) && r.checked_length_m != null);
   const schaal = metMaat.length ? schaalFactor(metMaat.map(monster)) : 1;
@@ -345,7 +348,24 @@ export default function DakvlakScherm() {
               <>
                 {fout && <IonList inset><IonItem><IonText color="danger" className="r360-small">{fout}</IonText></IonItem></IonList>}
 
-                {methode === null && (
+                {methode === null && tekenen !== null && gebouw && (
+                  <>
+                    <div className="r360-section">Dakdeel tekenen · {tekenen.length} {tekenen.length === 1 ? 'hoek' : 'hoeken'}</div>
+                    <div className="r360-tekening-kader">
+                      <DakTekening detectie={gebouw.tekening.detectie!} schaal={gebouw.schaal} dakvlakken={[]}
+                        onTik={p => setTekenen([...tekenen, p])} tekenPunten={tekenen} />
+                    </div>
+                    <p className="r360-uitleg">Tik de hoeken van het dakvlak één voor één aan, rondom. Een tik vlak bij een hoek of lijn van de tekening springt daar precies naartoe. Tik op Klaar als je rond bent; de laatste hoek sluit vanzelf aan op de eerste. Het nieuwe dakdeel komt in de tekening van het gebouw en dit dakvlak neemt het over.</p>
+                    <div className="r360-form__actions r360-knoppen">
+                      <IonButton expand="block" onClick={tekeningOpslaan} disabled={tekenen.length < 3 || !!bezig}>
+                        {bezig === 'tekenen' ? <IonSpinner name="crescent" /> : 'Klaar'}</IonButton>
+                      <IonButton expand="block" fill="outline" onClick={() => setTekenen(tekenen.slice(0, -1))} disabled={!tekenen.length || !!bezig}>Laatste hoek weg</IonButton>
+                      <IonButton expand="block" fill="clear" size="small" onClick={() => setTekenen(null)} disabled={!!bezig}>Annuleren</IonButton>
+                    </div>
+                  </>
+                )}
+
+                {methode === null && tekenen === null && (
                   <>
                     <div className="r360-section">Hoe wil je dit dakvlak meten?</div>
                     <div className="r360-form__actions r360-knoppen">
@@ -357,18 +377,26 @@ export default function DakvlakScherm() {
                         <p className="r360-uitleg"><b>Handmatige meting</b> kan als het project bij een gebouw met een daktekening hoort. Dit project heeft er (nog) geen.</p>
                       ) : (
                         <>
-                          <div className="r360-section">Of handmatig: kies het deel uit de tekening</div>
+                          <div className="r360-section">Of handmatig: tik het dakdeel aan in de tekening of de lijst</div>
                           <div className="r360-tekening-kader">
-                            <DakTekening detectie={gebouw.tekening.detectie!} schaal={gebouw.schaal} dakvlakken={[]} />
+                            <DakTekening detectie={gebouw.tekening.detectie!} schaal={gebouw.schaal} dakvlakken={[]}
+                              onKiesDeel={d => !bezig && neemOver(d)}
+                              gebruikt={anderen.filter(x => x.measurement_method === 'manual' && x.detected_part_id).map(x => x.detected_part_id!)} />
                           </div>
                           <IonList inset>
-                            {gebouw.tekening.detectie!.parts!.map(d => (
+                            {gebouw.tekening.detectie!.parts!.map(d => {
+                              const al = anderen.find(x => x.measurement_method === 'manual' && x.detected_part_id === `${d.kind}-${d.number}`);
+                              return (
                               <IonItem key={`${d.kind}-${d.number}`} button detail disabled={!!bezig} onClick={() => neemOver(d)}>
-                                <IonLabel>{naam(d)}</IonLabel>
+                                <IonLabel>{naam(d)}{al && <p className="r360-waarschuwing">Al gebruikt in {al.code}</p>}</IonLabel>
                                 <IonNote slot="end">{Math.round(deelOppervlakte(d, gebouw.schaal, []))} m²</IonNote>
                               </IonItem>
-                            ))}
+                            ); })}
                           </IonList>
+                          <div className="r360-form__actions">
+                            <IonButton expand="block" fill="outline" onClick={() => setTekenen([])} disabled={!!bezig}>Dakdeel zelf tekenen</IonButton>
+                          </div>
+                          <p className="r360-uitleg">Staat het dakvlak niet (goed) in de tekening? Teken het dan zelf door de hoeken aan te tikken.</p>
                           <p className="r360-uitleg">Het dakvlak krijgt de maten uit de tekening. Klopt een maat niet, vul dan bij een rand de meetlintmaat in: de andere randen en de oppervlakte schalen mee.</p>
                         </>
                       )}
@@ -486,7 +514,7 @@ export default function DakvlakScherm() {
                           <h2 className="r360-row-title">{r.code}</h2>
                           <p>{(() => {
                             if (!schaalbaar(r)) return 'Met de hand ingevuld';
-                            const bron = r.measurement_source === 'bag_reference' ? 'Tekening' : r.measurement_source === 'reach_rx2_rtk' ? 'RTK' : 'GPS';
+                            const bron = r.measurement_source === 'bag_reference' || r.measurement_source === 'drawn' ? 'Tekening' : r.measurement_source === 'reach_rx2_rtk' ? 'RTK' : 'GPS';
                             return r.checked_length_m != null ? `Meetlint · ${bron} ${meter(r.length_m)}`
                               : schaal !== 1 ? `Op schaal · ${bron} ${meter(r.length_m)}` : `${bron === 'Tekening' ? 'Uit de tekening' : 'Uit de meetpunten'} · tik voor meetlintmaat`;
                           })()}{r.is_estimated ? ' · geschat' : ''}</p>

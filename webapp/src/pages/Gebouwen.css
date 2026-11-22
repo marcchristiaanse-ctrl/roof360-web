@@ -32,3 +32,4 @@
 .r360-waarschuwing { color: #B26A00; }
 .r360-lijn--rand { stroke: #0A1A2E; }
 .r360-tekening__ander { fill: rgba(142, 142, 147, 0.16); stroke: #8E8E93; }
+.r360-tekening__nieuw { fill: rgba(0, 189, 235, 0.3); }
