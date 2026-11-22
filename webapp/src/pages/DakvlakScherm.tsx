@@ -7,7 +7,7 @@ import {
   IonNote, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner, IonText, IonTitle, IonToolbar,
 } from '@ionic/react';
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useHistory, useParams } from 'react-router-dom';
 import {
   afschotTypes, bewaar, dakvlakTypes, haalDakranden, haalDakvlak, haalDakvlakken, haalMeetpunten, haalNulpunt, haalProject, nieuweId, verwijder, bewaarTekening,
   type Dakrand, type Dakvlak, type Meetpunt, type Nulpunt,
@@ -46,6 +46,9 @@ export default function DakvlakScherm() {
   const [gebouw, setGebouw] = useState<GebouwTekening | null | undefined>(undefined);
   // Andere dakvlakken van dit project: om te laten zien welk deel van de tekening al gebruikt is.
   const [anderen, setAnderen] = useState<Dakvlak[]>([]);
+  // Dakvlak verwijderen: eerst vragen of het zeker is (op het scherm, geen pop-up).
+  const [weghalenVraag, setWeghalenVraag] = useState(false);
+  const history = useHistory();
 
   const ophalen = useCallback(async () => {
     try {
@@ -115,6 +118,23 @@ export default function DakvlakScherm() {
     await bewaar(t, 'roof_planes', { id: dakvlak.id, measurement_method: null, detected_part_id: null, roof_model_version_id: null,
       contour_status: 'open', calculated_area_m2: null, scale_factor: null }, dakvlak.version);
   });
+
+  // Dakvlak verwijderen: eerst de randen en punten, dan het dakvlak zelf. Niets is echt weg:
+  // de server zet er alleen 'verwijderd' bij (tombstone). De code (DV-0x) komt weer vrij.
+  // Het deel van de daktekening blijft in de tekening en kun je daarna opnieuw overnemen.
+  async function dakvlakVerwijderen() {
+    if (!dakvlak) return;
+    setBezig('verwijderen'); setFout(null);
+    try {
+      for (const r of randen) await verwijder(t, 'roof_edges', r.id, r.version);
+      for (const p of punten) await verwijder(t, 'measurement_points', p.id, p.version);
+      await verwijder(t, 'roof_planes', dakvlak.id, dakvlak.version);
+      history.replace(`/projecten/${projectId}`);
+    } catch (e) {
+      setFout((e as Error).message); setWeghalenVraag(false);
+      await ophalen();
+    } finally { setBezig(null); }
+  }
 
   // Zelf tekenen, zoals de iOS-app: het getekende dakdeel komt in de daktekening van het gebouw
   // (nieuwe tekeningversie) en dit dakvlak neemt het daarna over. Zo staat het voor iedereen in de tekening.
@@ -587,6 +607,26 @@ export default function DakvlakScherm() {
                 </div>
                 <p className="r360-uitleg">Een gemeten punt kan niet worden aangepast. Klopt het niet, haal het dan weg en meet opnieuw. Het oude punt blijft bewaard.
                   Wil je de maten corrigeren? Tik op een rand en vul de meetlintmaat in: alle randen en de oppervlakte schalen dan mee.</p>
+                <div className="r360-form__actions r360-knoppen">
+                  {!weghalenVraag ? (
+                    <IonButton expand="block" fill="outline" color="danger" disabled={!!bezig} onClick={() => setWeghalenVraag(true)}>
+                      Dakvlak verwijderen
+                    </IonButton>
+                  ) : (
+                    <>
+                      <p className="r360-waarschuwing">
+                        Weet je zeker dat je {dakvlak.code} wilt verwijderen?
+                        {punten.length > 0 && (punten.length === 1 ? ' Het gemeten punt gaat ook weg.' : ` De ${punten.length} gemeten punten gaan ook weg.`)}
+                        {randen.length > 0 && (randen.length === 1 ? ' De dakrand gaat ook weg.' : ` De ${randen.length} dakranden gaan ook weg.`)}
+                        {' '}De daktekening van het gebouw blijft zoals hij is.
+                      </p>
+                      <IonButton expand="block" color="danger" disabled={!!bezig} onClick={dakvlakVerwijderen}>
+                        {bezig === 'verwijderen' ? <IonSpinner name="crescent" /> : `Ja, ${dakvlak.code} verwijderen`}
+                      </IonButton>
+                      <IonButton expand="block" fill="clear" disabled={!!bezig} onClick={() => setWeghalenVraag(false)}>Niet verwijderen</IonButton>
+                    </>
+                  )}
+                </div>
               </>
             )}
         </div>
