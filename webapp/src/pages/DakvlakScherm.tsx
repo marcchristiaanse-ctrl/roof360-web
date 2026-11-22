@@ -229,6 +229,49 @@ export default function DakvlakScherm() {
   const afwijkingBevestigen = (r: Dakrand) => doe('ok-' + r.id, () =>
     bewaar(t, 'roof_edges', { id: r.id, deviation_confirmed: true }, r.version).then(() => undefined));
 
+  // Randen als lijnen voor de tekening, zodat je ze in de tekening kunt aantikken.
+  const segmenten: Segment[] = (() => {
+    if (methode === 'manual') {
+      const deel = gebouw?.tekening.detectie?.parts?.find(d => `${d.kind}-${d.number}` === dakvlak?.detected_part_id);
+      const ring = deel?.rings[0] ?? [];
+      return randen.flatMap(r => {
+        const i = Number(r.bag_reference_edge_id?.split(':')[1]);
+        return r.measurement_source === 'bag_reference' && ring[i] ? [{ rand: r, a: ring[i], b: ring[(i + 1) % ring.length] }] : [];
+      });
+    }
+    if (punten.length === 0) return [];
+    const xy = (pid: string | null) => { const p = punten.find(q => q.id === pid); return p ? lokaal(p, punten[0]) : null; };
+    return randen.flatMap(r => { const a = xy(r.start_point_id), b = xy(r.end_point_id); return a && b ? [{ rand: r, a, b }] : []; });
+  })();
+  const [vanaf, setVanaf] = useState<'tekening' | 'lijst'>('lijst');
+  const kiesRand = (r: Dakrand, waar: 'tekening' | 'lijst' = 'lijst') => {
+    setVanaf(waar);
+    setBewerkRand(bewerkRand === r.id && vanaf === waar ? null : r.id);
+    setRandMaat(r.checked_length_m != null ? String(r.checked_length_m).replace('.', ',') : '');
+  };
+  const maatInvoer = (r: Dakrand) => (
+    <IonItem>
+      <IonInput label={`Meetlintmaat ${r.code} (m)`} type="text" inputmode="decimal" value={randMaat}
+        onIonInput={e => setRandMaat(String(e.detail.value ?? ''))}
+        onKeyDown={e => e.key === 'Enter' && randMaatZetten(r)} />
+      {r.checked_length_m != null && <IonButton slot="end" size="small" fill="clear" color="danger" disabled={!!bezig} onClick={() => randMaatZetten(r, true)}>Wissen</IonButton>}
+      <IonButton slot="end" size="small" disabled={!randMaat || !!bezig} onClick={() => randMaatZetten(r)}>
+        {bezig === 'maat-' + r.id ? <IonSpinner name="crescent" /> : 'Bewaar'}</IonButton>
+    </IonItem>
+  );
+  const gekozenRand = randen.find(r => r.id === bewerkRand);
+  const randenTekening = segmenten.length > 0 && (
+    <>
+      <RandenTekening segmenten={segmenten} achtergrond={methode === 'manual'
+          ? (gebouw?.tekening.detectie?.parts ?? []).filter(d => `${d.kind}-${d.number}` !== dakvlak?.detected_part_id)
+            .map(d => ({ ringen: d.rings, naam: naam(d), label: d.labelPoint }))
+          : []} gekozen={bewerkRand} onKies={r => kiesRand(r, 'tekening')}
+        tekst={r => meter(opSchaal(r), 1)} klasse={r => r.checked_length_m != null ? (wijktAf(r) ? 'afwijking' : 'gemeten') : 'gewoon'} />
+      {gekozenRand && vanaf === 'tekening' && schaalbaar(gekozenRand) && <IonList inset>{maatInvoer(gekozenRand)}</IonList>}
+      <p className="r360-uitleg">Tik op een rand in de tekening om de meetlintmaat in te vullen.</p>
+    </>
+  );
+
   const omtrek = randen.reduce((s, r) => s + opSchaal(r), 0);
   const nl = (n: number, c = 2) => n.toLocaleString('nl-NL', { maximumFractionDigits: c });
 
@@ -291,11 +334,11 @@ export default function DakvlakScherm() {
                   return (
                     <>
                       <div className="r360-section">Handmatige meting</div>
-                      {deel && gebouw && (
+                      {randenTekening || (deel && gebouw && (
                         <div className="r360-tekening-kader">
                           <DakTekening detectie={{ parts: [deel] }} schaal={gebouw.schaal * schaal} dakvlakken={[]} />
                         </div>
-                      )}
+                      ))}
                       <IonList inset>
                         <IonItem><IonLabel>Overgenomen uit</IonLabel>
                           <IonNote slot="end">{deel ? naam(deel) : dakvlak.detected_part_id}{gebouw ? ` · tekening v${gebouw.versie.version_number}` : ''}</IonNote></IonItem>
@@ -310,7 +353,7 @@ export default function DakvlakScherm() {
                 {methode === 'emlid' && (
                   <>
                 <div className="r360-section">Meetpunten · {punten.length}</div>
-                {punten.length >= 2 && <Schets punten={punten} gesloten={gesloten} />}
+                {gesloten && randenTekening ? randenTekening : punten.length >= 2 && <Schets punten={punten} gesloten={gesloten} />}
                 <IonList inset>
                   {punten.length === 0 && (
                     <IonItem><IonText className="r360-small">Zet de Emlid op de eerste hoek van het dakvlak, houd de stok stil en tik op "Punt meten".
@@ -392,8 +435,7 @@ export default function DakvlakScherm() {
                   {randen.map(r => (
                     <div key={r.id}>
                       <IonItem button={schaalbaar(r) && !bezig} detail={false}
-                        onClick={schaalbaar(r) ? () => { setBewerkRand(bewerkRand === r.id ? null : r.id);
-                          setRandMaat(r.checked_length_m != null ? String(r.checked_length_m).replace('.', ',') : ''); } : undefined}>
+                        onClick={schaalbaar(r) ? () => kiesRand(r) : undefined}>
                         <IonLabel>
                           <h2 className="r360-row-title">{r.code}</h2>
                           <p>{(() => {
@@ -415,16 +457,7 @@ export default function DakvlakScherm() {
                           <IonButton slot="end" size="small" fill="outline" disabled={!!bezig} onClick={() => afwijkingBevestigen(r)}>Klopt</IonButton>
                         </IonItem>
                       )}
-                      {bewerkRand === r.id && (
-                        <IonItem>
-                          <IonInput label="Meetlintmaat (m)" type="text" inputmode="decimal" value={randMaat}
-                            onIonInput={e => setRandMaat(String(e.detail.value ?? ''))}
-                            onKeyDown={e => e.key === 'Enter' && randMaatZetten(r)} />
-                          {r.checked_length_m != null && <IonButton slot="end" size="small" fill="clear" color="danger" disabled={!!bezig} onClick={() => randMaatZetten(r, true)}>Wissen</IonButton>}
-                          <IonButton slot="end" size="small" disabled={!randMaat || !!bezig} onClick={() => randMaatZetten(r)}>
-                            {bezig === 'maat-' + r.id ? <IonSpinner name="crescent" /> : 'Bewaar'}</IonButton>
-                        </IonItem>
-                      )}
+                      {bewerkRand === r.id && vanaf === 'lijst' && maatInvoer(r)}
                     </div>
                   ))}
                   <IonItem>
@@ -509,6 +542,59 @@ function Schets({ punten, gesloten }: { punten: Meetpunt[]; gesloten: boolean })
             <text x={sx(p.x) + r * 1.5} y={sy(p.y) - r * 1.5} fontSize={r * 3} className="r360-tekening__naam">{punten[i].point_code || `P${i + 1}`}</text>
           </g>
         ))}
+      </svg>
+    </div>
+  );
+}
+
+// Tekening van het dakvlak waarin je de randen kunt aantikken (noorden boven, maten in meters).
+type Segment = { rand: Dakrand; a: { x: number; y: number }; b: { x: number; y: number } };
+type Punt = { x: number; y: number };
+function RandenTekening({ segmenten, achtergrond = [], gekozen, onKies, tekst, klasse }: {
+  segmenten: Segment[]; achtergrond?: { ringen: Punt[][]; naam: string; label: Punt }[];
+  gekozen: string | null; onKies: (r: Dakrand) => void;
+  tekst: (r: Dakrand) => string; klasse: (r: Dakrand) => 'gewoon' | 'gemeten' | 'afwijking';
+}) {
+  // Andere dakdelen (bijvoorbeeld een opbouw op dit dak) grijs op de achtergrond, zodat de tekening sluit.
+  const alle = [...segmenten.flatMap(s => [s.a, s.b]), ...achtergrond.flatMap(d => d.ringen.flat())];
+  const xs = alle.map(p => p.x), ys = alle.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const rand = Math.max(maxX - minX, maxY - minY, 1) * 0.1;
+  const b = maxX - minX + 2 * rand, h = Math.max(maxY - minY + 2 * rand, b * 0.4);
+  const sx = (x: number) => x - minX + rand, sy = (y: number) => maxY - y + rand;
+  const letter = Math.max(b, h) / 34;
+  // midden van de vorm, om de maat aan de buitenkant van een rand te zetten
+  const eigen = segmenten.flatMap(s => [s.a]);
+  const mx = eigen.reduce((t, p) => t + p.x, 0) / eigen.length, my = eigen.reduce((t, p) => t + p.y, 0) / eigen.length;
+  const vlak = segmenten.map((s, i) => `${i ? 'L' : 'M'}${sx(s.a.x).toFixed(2)},${sy(s.a.y).toFixed(2)}`).join('') + 'Z';
+  return (
+    <div className="r360-tekening-kader">
+      <svg className="r360-tekening" viewBox={`0 0 ${b} ${h}`} role="img" aria-label="Dakvlak met randen">
+        {achtergrond.map((d, i) => (
+          <g key={'a' + i} pointerEvents="none">
+            <path d={d.ringen.map(r => 'M' + r.map(p => `${sx(p.x).toFixed(2)},${sy(p.y).toFixed(2)}`).join('L') + 'Z').join(' ')}
+              fillRule="evenodd" className="r360-tekening__ander" strokeWidth={letter / 10} />
+            <text x={sx(d.label.x)} y={sy(d.label.y)} textAnchor="middle" fontSize={letter * 0.7} className="r360-tekening__maat">{d.naam}</text>
+          </g>
+        ))}
+        <path d={vlak} className="r360-tekening__dak" strokeWidth={0} />
+        {segmenten.map(({ rand: r, a, b: e }) => {
+          const k = gekozen === r.id ? 'r360-lijn--gekozen' : klasse(r) === 'afwijking' ? 'r360-lijn--afwijking'
+            : klasse(r) === 'gemeten' ? 'r360-lijn--gemeten' : 'r360-lijn--rand';
+          const cx = (a.x + e.x) / 2, cy = (a.y + e.y) / 2;
+          const d = Math.hypot(cx - mx, cy - my) || 1;
+          const tx = cx + (cx - mx) / d * letter * 1.1, ty = cy + (cy - my) / d * letter * 1.1;
+          return (
+            <g key={r.id} onClick={() => onKies(r)} style={{ cursor: 'pointer' }}>
+              <line x1={sx(a.x)} y1={sy(a.y)} x2={sx(e.x)} y2={sy(e.y)} stroke="transparent" strokeWidth={letter * 1.6} />
+              <line x1={sx(a.x)} y1={sy(a.y)} x2={sx(e.x)} y2={sy(e.y)} className={k}
+                strokeWidth={letter / (gekozen === r.id ? 2.5 : 5)} strokeLinecap="round" />
+              <text x={sx(tx)} y={sy(ty)} textAnchor="middle" dominantBaseline="middle" fontSize={letter * 0.7} className="r360-lijn__tekst">
+                {r.code} · {tekst(r)}
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
