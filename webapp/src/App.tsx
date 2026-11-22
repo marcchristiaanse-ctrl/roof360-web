@@ -13,6 +13,7 @@ import Projecten from './pages/Projecten';
 import NieuwProject from './pages/NieuwProject';
 import ProjectScherm from './pages/ProjectScherm';
 import DakvlakScherm from './pages/DakvlakScherm';
+import { serviceRoutes } from './modules/service/routes';
 
 // Altijd iPhone-stijl, ook op Android en Windows, zodat het overal hetzelfde voelt.
 setupIonicReact({ mode: 'ios' });
@@ -45,6 +46,7 @@ export default function App() {
           <Route exact path="/nieuw-project" component={NieuwProject} />
           <Route exact path="/projecten/:id" component={ProjectScherm} />
           <Route exact path="/projecten/:projectId/dakvlakken/:id" component={DakvlakScherm} />
+          {serviceRoutes}
           {schermen.map(s => (
             <Route key={s.pad} exact path={s.pad} render={() => <Binnenkort titel={s.titel} />} />
           ))}

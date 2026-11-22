@@ -8,6 +8,8 @@ import {
   IconBuilding, IconBuildings, IconCalendarClock, IconCamera,
   IconFolder, IconPersonCircle, IconPlusSquare, IconResume,
 } from '../components/icons';
+import { useBedrijf } from '../useBedrijf';
+import { useServiceAan } from '../modules/service/gegevens';
 import './Home.css';
 
 // Voorbeeld zolang er nog geen inlog en gegevens zijn. Later komt dit uit Supabase.
@@ -25,6 +27,12 @@ const tegels = [
 
 export default function Home() {
   const history = useHistory();
+  // Modules: een tegel verschijnt alleen als de module aan staat voor je bedrijf.
+  const { bedrijf } = useBedrijf();
+  const serviceAan = useServiceAan(bedrijf?.tenant_id);
+  const alleTegels = serviceAan
+    ? [...tegels, { title: 'Calamiteiten', subtitle: 'Lekkages en werkbonnen', icon: <IconCalendarClock />, href: '/calamiteiten' }]
+    : tegels;
   // Klikken op een tegel of kaart: binnen de app naar het volgende scherm.
   const open = (e: MouseEvent) => {
     const link = (e.target as HTMLElement).closest('a[data-router-link]');
@@ -49,7 +57,7 @@ export default function Home() {
           <HomeCard icon={<IconCalendarClock />} title="Agenda" lines={[agendaVandaag]} href="/agenda" />
 
           <nav className="r360-home__grid">
-            {tegels.map(t => <HomeTile key={t.href} {...t} />)}
+            {alleTegels.map(t => <HomeTile key={t.href} {...t} />)}
           </nav>
         </main>
       </IonContent>
