@@ -4,8 +4,9 @@
 import {
   IonBackButton, IonButton, IonButtons, IonContent, IonHeader, IonInput, IonItem, IonLabel, IonList,
   IonNote, IonPage, IonSegment, IonSegmentButton, IonSelect, IonSelectOption, IonSpinner, IonText,
-  IonTextarea, IonTitle, IonToggle, IonToolbar,
+  IonTextarea, IonTitle, IonToggle, IonToolbar, IonSearchbar, IonIcon,
 } from '@ionic/react';
+import { star } from 'ionicons/icons';
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { adresRegel } from '../../gegevens';
@@ -15,8 +16,8 @@ import { Melding, NietIngelogd } from '../../pages/Gebouwen';
 import { Regel } from './MeldingScherm';
 import { WachtrijBalk } from './ServiceOverzicht';
 import {
-  haalWerkbon, haalWerkbonRegels, regelSoortNaam, tijdKort, werkbonStatusNaam,
-  type Werkbon, type WerkbonRegel, type WerkbonStatus,
+  haalWerkbon, haalWerkbonRegels, regelSoortNaam, tijdKort, werkbonStatusNaam, zoekArtikelen,
+  type ArtikelKeuze, type Werkbon, type WerkbonRegel, type WerkbonStatus,
 } from './gegevens';
 import { bewaarKopie, bewaarService, leesKopie, useWachtrij } from './opslaan';
 import '../../pages/Account.css';
@@ -44,6 +45,25 @@ export default function WerkbonScherm() {
   const [aantal, setAantal] = useState('');
   const [eenheid, setEenheid] = useState('uur');
   const [tekenaar, setTekenaar] = useState('');
+  const [artikelZoek, setArtikelZoek] = useState('');
+  const [artikelen, setArtikelen] = useState<ArtikelKeuze[]>([]);
+  const [artikel, setArtikel] = useState<ArtikelKeuze | null>(null);
+
+  // Artikellijst: zonder zoekterm de meest gebruikte bovenaan (de server leert dat).
+  useEffect(() => {
+    if (!bedrijf || !werkbon) return;
+    const t = setTimeout(() => {
+      zoekArtikelen(bedrijf.tenant_id, artikelZoek, werkbon.source_module)
+        .then(lijst => { setArtikelen(lijst); bewaarKopie('artikelen', lijst); })
+        .catch(() => setArtikelen(leesKopie<ArtikelKeuze[]>('artikelen') ?? []));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [bedrijf?.tenant_id, werkbon?.id, artikelZoek]);
+
+  function kiesArtikel(a: ArtikelKeuze) {
+    setArtikel(a); setOmschrijving(a.name); setEenheid(a.unit);
+    setSoort(a.kind); setArtikelZoek('');
+  }
 
   useEffect(() => {
     if (!bedrijf) return;
@@ -71,14 +91,14 @@ export default function WerkbonScherm() {
     if (!bedrijf || !werkbon) return;
     const hoeveel = Number(aantal.replace(',', '.'));
     if (!omschrijving.trim() || !(hoeveel >= 0)) { setFout('Vul een omschrijving en een aantal in.'); return; }
-    const regel: WerkbonRegel = { id: nieuweId(), line_type: soort, description: omschrijving.trim(),
+    const regel: WerkbonRegel = { id: nieuweId(), line_type: soort, price_item_id: artikel?.id ?? null, description: omschrijving.trim(),
       quantity: hoeveel, unit: eenheid.trim() || null, work_date: new Date().toISOString().slice(0, 10) };
     setFout(null); setBezig(true);
     try {
       await bewaarService(bedrijf.tenant_id, 'work_order_lines', { ...regel, work_order_id: werkbon.id });
       const nieuw = [...regels, regel];
       setRegels(nieuw); bewaarKopie(`werkbon.${id}`, { w: werkbon, r: nieuw });
-      setOmschrijving(''); setAantal('');
+      setOmschrijving(''); setAantal(''); setArtikel(null);
     } catch (e) { setFout((e as Error).message); } finally { setBezig(false); }
   }
 
@@ -170,10 +190,29 @@ export default function WerkbonScherm() {
                 )}
                 {!afgerond && (
                   <IonList inset>
+                    {artikel ? (
+                      <IonItem button detail={false} onClick={() => { setArtikel(null); setOmschrijving(''); }}>
+                        <IonLabel><h2>{artikel.name}</h2><p>{artikel.code} · tik om een ander artikel te kiezen</p></IonLabel>
+                      </IonItem>
+                    ) : (
+                      <>
+                        <IonSearchbar placeholder="Zoek artikel (bv. gas, APP)" value={artikelZoek}
+                          onIonInput={e => setArtikelZoek(String(e.detail.value ?? ''))} />
+                        {artikelen.slice(0, artikelZoek ? 15 : 6).map(a => (
+                          <IonItem key={a.id} button detail={false} onClick={() => kiesArtikel(a)}>
+                            {a.often_used && <IonIcon slot="start" icon={star} className="r360-service__vaak" aria-label="Vaak gebruikt" />}
+                            <IonLabel><h2>{a.name}</h2><p>{[a.code, a.category].filter(Boolean).join(' · ')}</p></IonLabel>
+                            <IonNote slot="end">{a.unit}</IonNote>
+                          </IonItem>
+                        ))}
+                      </>
+                    )}
                     <IonItem>
                       <IonSelect label="Soort" value={soort} interface="action-sheet"
-                        onIonChange={e => { const s = e.detail.value; setSoort(s); setEenheid(s === 'labour' ? 'uur' : 'stuks'); }}>
+                        onIonChange={e => { const s = e.detail.value; setSoort(s); setEenheid(s === 'labour' || s === 'travel_time' ? 'uur' : s === 'mileage' ? 'km' : 'stuk'); }}>
                         <IonSelectOption value="labour">Uren</IonSelectOption>
+                        <IonSelectOption value="travel_time">Rijtijd</IonSelectOption>
+                        <IonSelectOption value="mileage">Kilometers</IonSelectOption>
                         <IonSelectOption value="material">Materiaal</IonSelectOption>
                         <IonSelectOption value="other">Overig</IonSelectOption>
                       </IonSelect>

@@ -44,7 +44,7 @@ export type Werkbon = {
 };
 
 export type WerkbonRegel = {
-  id: string; line_type: 'labour' | 'material' | 'other'; description: string;
+  id: string; line_type: 'labour' | 'travel_time' | 'mileage' | 'material' | 'other'; price_item_id?: string | null; description: string;
   quantity: number; unit: string | null; work_date: string | null;
 };
 
@@ -64,7 +64,7 @@ export const werkbonStatusNaam: Record<WerkbonStatus, string> = {
   completed: 'Afgerond', invoiced: 'Gefactureerd', cancelled: 'Vervallen',
 };
 export const regelSoortNaam: Record<WerkbonRegel['line_type'], string> = {
-  labour: 'Uren', material: 'Materiaal', other: 'Overig',
+  labour: 'Uren', travel_time: 'Rijtijd', mileage: 'Kilometers', material: 'Materiaal', other: 'Overig',
 };
 
 const GEBOUW_KORT = 'building:buildings(id, name, street, house_number, house_number_addition, postal_code, city, formatted_address, roof360_building_id)';
@@ -127,7 +127,7 @@ export const haalWerkbon = (id: string) =>
 
 export const haalWerkbonRegels = (werkbonId: string) =>
   lees<WerkbonRegel[]>(supabase.from('work_order_lines')
-    .select('id, line_type, description, quantity, unit, work_date')
+    .select('id, line_type, price_item_id, description, quantity, unit, work_date')
     .eq('work_order_id', werkbonId).is('deleted_at', null).order('created_at'));
 
 // Open = nog niet opgelost, gesloten of vervallen. Spoed eerst, dan de oudste.
@@ -152,4 +152,16 @@ export function useServiceAan(tenantId: string | undefined): boolean {
     return () => { actief = false; };
   }, [tenantId]);
   return aan;
+}
+
+// Artikelen en tarieven om te kiezen (zonder prijzen), gesorteerd op wat vaak gebruikt wordt.
+export type ArtikelKeuze = {
+  id: string; kind: 'labour' | 'travel_time' | 'mileage' | 'material' | 'other';
+  code: string; name: string; unit: string; category: string; often_used: boolean;
+};
+export async function zoekArtikelen(tenantId: string, zoek: string, context: 'service' | 'maintenance' = 'service'): Promise<ArtikelKeuze[]> {
+  const { data, error } = await supabase.rpc('price_item_choices',
+    { p_tenant_id: tenantId, p_context: context, p_search: zoek.trim() || null, p_limit: 30 });
+  if (error) throw fout(error);
+  return (data ?? []) as ArtikelKeuze[];
 }
