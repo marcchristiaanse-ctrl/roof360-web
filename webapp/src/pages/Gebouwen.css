@@ -1,0 +1,18 @@
+/* Gebouwen en daktekening */
+.r360-midden { display: flex; justify-content: center; padding: 32px; }
+.r360-uitleg { margin: 14px 36px 32px; color: rgba(60, 60, 67, 0.6); font-size: 13px; line-height: 1.4; }
+.r360-heeft-tekening { color: #0A7EA4 !important; }
+.r360-waarde { max-width: 60%; text-align: right; white-space: normal; }
+.r360-gekozen { --background: #EBFAFF; }
+.r360-leeg { color: rgba(60, 60, 67, 0.6); padding: 24px; text-align: center; margin: 0; }
+
+.r360-tekening-kader {
+  margin: 6px 16px 0; background: #FFFFFF; border-radius: 10px; padding: 12px;
+  overflow: hidden;
+}
+.r360-tekening { display: block; width: 100%; max-height: 60vh; }
+.r360-tekening__dak { fill: rgba(0, 189, 235, 0.18); stroke: #0A1A2E; }
+.r360-tekening__luifel { fill: rgba(142, 142, 147, 0.2); stroke: #8E8E93; stroke-dasharray: 1 0.6; }
+.r360-tekening__naam { fill: #0A1A2E; font-weight: 600; }
+.r360-tekening__maat { fill: rgba(60, 60, 67, 0.75); }
+.r360-paginakop { margin: 18px 36px 0; font-size: 22px; font-weight: 700; color: #0A1A2E; }

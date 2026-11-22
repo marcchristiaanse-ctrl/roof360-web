@@ -1,0 +1,12 @@
+/* Formulierschermen in iOS-stijl (zoals Form in SwiftUI). */
+.r360-form { --background: #F2F2F7; }
+.r360-form__body { max-width: 640px; margin: 0 auto; }
+.r360-form ion-list { --ion-item-background: #FFFFFF; background: #FFFFFF; margin-top: 6px; }
+.r360-form ion-item { --background: #FFFFFF; }
+/* Kopje boven een groep, zoals Section("...") in iOS */
+.r360-section { margin: 22px 36px 0; color: rgba(60, 60, 67, 0.6); font-size: 13px; text-transform: uppercase; }
+.r360-form__actions { padding: 0 16px; max-width: 640px; }
+.r360-form__actions ion-button { --border-radius: 12px; font-weight: 600; min-height: 50px; }
+.r360-small { font-size: 13px; }
+.r360-row-title { font-weight: 600; }
+.r360-actief { color: #34C759 !important; }

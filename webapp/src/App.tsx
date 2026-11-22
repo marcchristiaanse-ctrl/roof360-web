@@ -6,6 +6,9 @@ import { createMemoryHistory } from 'history';
 import { Route } from 'react-router-dom';
 import Home from './pages/Home';
 import Binnenkort from './pages/Binnenkort';
+import Account from './pages/Account';
+import Gebouwen from './pages/Gebouwen';
+import Gebouw from './pages/Gebouw';
 
 // Altijd iPhone-stijl, ook op Android en Windows, zodat het overal hetzelfde voelt.
 setupIonicReact({ mode: 'ios' });
@@ -14,9 +17,7 @@ const schermen = [
   { pad: '/nieuw-project', titel: 'Nieuw project' },
   { pad: '/projecten', titel: 'Projecten' },
   { pad: '/opdrachtgevers', titel: 'Opdrachtgevers' },
-  { pad: '/gebouwen', titel: 'Gebouwen' },
   { pad: '/snelle-fotos', titel: "Snelle foto's" },
-  { pad: '/account', titel: 'Account' },
   { pad: '/agenda', titel: 'Agenda' },
 ];
 
@@ -35,6 +36,9 @@ export default function App() {
       <Router>
         <IonRouterOutlet>
           <Route exact path="/" component={Home} />
+          <Route exact path="/account" component={Account} />
+          <Route exact path="/gebouwen" component={Gebouwen} />
+          <Route exact path="/gebouwen/:id" component={Gebouw} />
           {schermen.map(s => (
             <Route key={s.pad} exact path={s.pad} render={() => <Binnenkort titel={s.titel} />} />
           ))}
